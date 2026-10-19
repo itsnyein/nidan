@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Format, lint, typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+
+  test:
+    name: Test (${{ matrix.os }}, Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: ["22", "24"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm build
+      - name: Smoke-run the built CLI
+        run: node dist/cli.js --version
+
+  pr-title:
+    name: PR title
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate Conventional Commit title
+        env:
+          # Passed as an environment variable so the title is never interpolated
+          # into the script body, where it could be executed as shell code.
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          if [ "$(printf '%s' "$PR_TITLE" | wc -l)" -ne 0 ]; then
+            echo "PR title must be a single line."
+            exit 1
+          fi
+          pattern='^(feat|fix|docs|test|refactor|chore|ci|build|perf|style|revert)(\([^()]+\))?!?: .+$'
+          if ! printf '%s' "$PR_TITLE" | grep -Eq "$pattern"; then
+            echo "PR title is not a valid one-line Conventional Commit:"
+            printf '%s\n' "$PR_TITLE"
+            echo "Expected: <type>[optional scope][!]: <description>"
+            echo "Allowed types: feat, fix, docs, test, refactor, chore, ci, build, perf, style, revert"
+            exit 1
+          fi
+
+  ci-success:
+    name: CI success
+    needs: [checks, test, pr-title]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every job to have succeeded
+        env:
+          CHECKS_RESULT: ${{ needs.checks.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+          PR_TITLE_RESULT: ${{ needs.pr-title.result }}
+        run: |
+          set -euo pipefail
+          echo "checks=$CHECKS_RESULT test=$TEST_RESULT pr-title=$PR_TITLE_RESULT"
+          if [ "$CHECKS_RESULT" != "success" ] || [ "$TEST_RESULT" != "success" ]; then
+            exit 1
+          fi
+          # pr-title does not run on push events, so "skipped" is acceptable there.
+          if [ "$PR_TITLE_RESULT" != "success" ] && [ "$PR_TITLE_RESULT" != "skipped" ]; then
+            exit 1
+          fi

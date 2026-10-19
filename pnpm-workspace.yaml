@@ -1,0 +1,5 @@
+# 14 days, expressed in minutes: newly published versions are not installed until
+# they have had time to be flagged and unpublished if compromised.
+minimumReleaseAge: 20160
+onlyBuiltDependencies:
+  - esbuild

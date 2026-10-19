@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+planning/
+.env
+.env.*
+*.log
+*.tgz
+.DS_Store
+.claude/settings.local.json

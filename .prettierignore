@@ -1,0 +1,10 @@
+pnpm-lock.yaml
+node_modules/
+dist/
+coverage/
+
+# These files are specified verbatim by the task prompts that own them;
+# Prettier's markdown reflow would change their required content.
+AGENTS.md
+CLAUDE.md
+.github/pull_request_template.md
