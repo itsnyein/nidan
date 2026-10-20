@@ -1,9 +1,8 @@
 import { execFile } from "node:child_process";
-import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { createFixtureRepo } from "../helpers/fixture-repo.js";
 
@@ -19,17 +18,7 @@ afterEach(async () => {
   }
 });
 
-beforeAll(async () => {
-  // The CLI is tested as the artifact users actually run, not as imported modules: the
-  // shebang, the bundle, and the exit code are all part of the contract.
-  //
-  // tsup is invoked through Node rather than through `pnpm build`: on Windows `pnpm` is a
-  // .cmd shim, which `execFile` cannot resolve without a shell, and a shell is exactly
-  // what this project avoids spawning.
-  const require = createRequire(`${process.cwd()}/`);
-  const tsupBin = require.resolve("tsup/dist/cli-default.js");
-  await execFileAsync(process.execPath, [tsupBin], { cwd: process.cwd() });
-}, TIMEOUT_MS);
+// dist/cli.js is built once by the globalSetup in vitest.config.ts.
 
 interface RunResult {
   readonly code: number;

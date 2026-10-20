@@ -24,6 +24,7 @@ Use [`template.md`](template.md) for new records. Number them sequentially.
 | [0010](0010-prettier-formats-governance-markdown.md) | Prettier formats governance Markdown                         | Accepted |
 | [0011](0011-repo-local-noreply-commit-email.md)      | Repository-local noreply commit email                        | Accepted |
 | [0012](0012-tests-helpers-directory.md)              | `tests/helpers/` for test-only helpers                       | Accepted |
+| [0013](0013-pinned-git-invocation.md)                | Every Git invocation is pinned, never inherited              | Accepted |
 
 Records 0001–0006 are the set required before Phase 1 can be called done. They cover the
 engine, the identity model, the relation/resolution split, gaps-not-edges, snapshot

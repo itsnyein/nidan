@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 import { spawn } from "node:child_process";
 
 import { GitError } from "./errors.js";
+import { GIT_GLOBAL_ARGS, gitEnvironment } from "./exec.js";
 
 const LINE_FEED = 0x0a;
 
@@ -29,8 +30,12 @@ export interface BlobReader {
  * pairs each response with the request that asked for it.
  */
 export function openBlobReader(repoRoot: string): BlobReader {
-  const child = spawn("git", ["cat-file", "--batch"], {
+  // Spawned rather than run through `runGit` because the batch protocol needs a live
+  // pipe, but it takes the same global options and the same scrubbed environment: an
+  // inherited GIT_DIR would otherwise read objects from a different repository.
+  const child = spawn("git", [...GIT_GLOBAL_ARGS, "cat-file", "--batch"], {
     cwd: repoRoot,
+    env: gitEnvironment(),
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true,
   });

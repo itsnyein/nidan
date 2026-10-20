@@ -1,4 +1,5 @@
 node_modules/
+.pnpm-store/
 # Fixture package-manager layouts are test data and must be committed. The second
 # negation re-includes nested node_modules inside pnpm's .pnpm store.
 !tests/fixtures/*/node_modules/
