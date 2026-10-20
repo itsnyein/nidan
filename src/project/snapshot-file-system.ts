@@ -426,9 +426,27 @@ interface Matcher {
  * Minimal glob support: `**`, `*`, and `?`, with a leading `!` for negation. That is the
  * subset `tsconfig.json` `include` and `exclude` use.
  */
+/**
+ * Glob syntax `tsconfig.json` `include` and `exclude` are documented to use: `**`, `*`,
+ * `?`, and a leading `!`. Anything else is rejected.
+ */
+const UNSUPPORTED_GLOB_SYNTAX = /[[\]{}()+@|]/;
+
 function toMatcher(pattern: string): Matcher {
   const negated = pattern.startsWith("!");
   const body = toPosixPath(negated ? pattern.slice(1) : pattern);
+
+  // Rejected rather than passed through. An unsupported construct would otherwise be
+  // escaped into a literal and quietly match nothing, so a tsconfig using brace or
+  // character-class syntax would silently analyze an empty file set — the worst possible
+  // failure for a tool whose empty result is meant to mean something.
+  const unsupported = UNSUPPORTED_GLOB_SYNTAX.exec(body);
+  if (unsupported !== null) {
+    throw new SnapshotFileSystemError(
+      `glob pattern "${pattern}" uses unsupported syntax "${unsupported[0]}"; ` +
+        "only **, *, ? and a leading ! are supported",
+    );
+  }
 
   let expression = "";
   for (let index = 0; index < body.length; index += 1) {

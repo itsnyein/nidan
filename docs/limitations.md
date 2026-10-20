@@ -70,6 +70,25 @@ If `node_modules` is missing entirely, the run is `degraded` with the reason `de
 
 If `base` and `head` differ in their `package.json` dependency fields or their lockfile, the report carries a `dependency-manifest-changed` warning listing the changed package names. This is a warning only — it does not degrade the run.
 
+### Import paths must match the committed file's case
+
+omen compares paths case-sensitively on every platform. An import whose case differs from
+the path recorded in Git does not resolve, and is reported as an `unresolved-module` gap.
+
+```ts
+// committed as src/format.ts
+import { formatRow } from "./Format.js"; // unresolved-module
+```
+
+This is deliberate, and it has a cost. On a case-insensitive filesystem — the default on
+macOS and Windows — that import works, so a repository can build locally and still be
+reported as having an unresolved module here. The same code genuinely fails on a
+case-sensitive filesystem, which is what most Linux CI runners and container images use.
+
+Matching the host filesystem instead would make omen's output depend on the machine it ran
+on, which the [determinism rules](output.md#determinism) forbid. Reporting the stricter
+answer everywhere also surfaces a real portability bug rather than hiding it.
+
 ### Paths outside the repository are denied
 
 Module resolution is confined to the repository and its `node_modules`. A path that escapes the repository is denied, surfacing as an `unresolved-module` gap or a configuration reason.
