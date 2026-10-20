@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { createFixtureRepo } from "../helpers/fixture-repo.js";
 
@@ -20,17 +20,7 @@ afterEach(async () => {
   }
 });
 
-beforeAll(async () => {
-  const { createRequire } = await import("node:module");
-  const require = createRequire(`${process.cwd()}/`);
-  await execFileAsync(
-    process.execPath,
-    [require.resolve("tsup/dist/cli-default.js")],
-    {
-      cwd: process.cwd(),
-    },
-  );
-}, TIMEOUT_MS);
+// dist/cli.js is built once by the globalSetup in vitest.config.ts.
 
 async function runCli(
   args: string[],
