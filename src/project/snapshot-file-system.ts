@@ -2,7 +2,6 @@ import {
   existsSync,
   readFileSync as readDiskFileSync,
   readdirSync,
-  realpathSync,
   statSync,
 } from "node:fs";
 
@@ -10,6 +9,7 @@ import type { FileSystemHost, RuntimeDirEntry } from "ts-morph";
 
 import { openBlobReader } from "../git/blobs.js";
 import { isSubmodule, isSymlink, listTree } from "../git/tree.js";
+import { canonicalize } from "./locate.js";
 import {
   ancestorsWithin,
   isWithin,
@@ -60,12 +60,9 @@ export async function createSnapshotFileSystem(
   options: SnapshotFileSystemOptions,
 ): Promise<SnapshotFileSystem> {
   const givenRoot = toPosixPath(options.repoRoot);
-  // The repository may be reached through a symlinked path — /var is a link to
-  // /private/var on macOS, and temporary directories live under it. `realpathSync` on a
-  // dependency then returns a path under the resolved root, which would fall outside the
-  // given root and be denied. Both spellings are therefore accepted, and the resolved one
-  // is canonical.
-  const repoRoot = resolveRealPath(givenRoot);
+  // Both spellings are accepted so a caller that has not canonicalized still addresses
+  // the same entries; see src/project/locate.ts.
+  const repoRoot = canonicalize(givenRoot);
 
   const entries = await listTree(options.repoRoot, options.commitSha);
   const symlinks: string[] = [];
@@ -137,15 +134,6 @@ async function readBlobs(
  */
 function normalizeNewlines(contents: Buffer): string {
   return contents.toString("utf8").replace(/\r\n/g, "\n");
-}
-
-function resolveRealPath(path: string): string {
-  try {
-    return toPosixPath(realpathSync.native(path));
-  } catch {
-    // The path need not exist yet; callers still compare against it.
-    return path;
-  }
 }
 
 interface SnapshotHostState {
@@ -318,7 +306,7 @@ class SnapshotHost implements FileSystemHost {
       // pnpm installs a package once under `.pnpm` and links to it. Resolving the link is
       // what lets the compiler find a package's own dependencies, which sit beside the
       // real directory rather than beside the link.
-      return resolveRealPath(normalized);
+      return canonicalize(normalized);
     }
     // Snapshot paths are virtual: there is nothing on disk to resolve, and resolving
     // would risk escaping into the working tree.
