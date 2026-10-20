@@ -13,6 +13,7 @@ The meaning of the output is **"potentially affected"**. It never guarantees beh
 | [Limitations](limitations.md)               | What omen does not resolve, what it reports instead, and the coverage statement                           |
 | [CLI](cli.md)                               | Inputs, exit codes, and run status                                                                        |
 | [Output](output.md)                         | Report structure, usage kinds, gap kinds, ordering, and determinism                                       |
+| [Decision records](adr/README.md)           | Why omen is built the way it is, and what each choice costs                                               |
 
 ## What is public contract
 
