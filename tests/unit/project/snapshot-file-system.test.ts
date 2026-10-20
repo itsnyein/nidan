@@ -239,6 +239,73 @@ describe("snapshot directory surface", () => {
   );
 });
 
+describe("glob support is bounded and says so", () => {
+  it.each([
+    ["a character class", "src/[abc].ts"],
+    ["a brace expansion", "src/*.{ts,tsx}"],
+    ["an extglob group", "src/+(a|b).ts"],
+  ])(
+    "rejects %s rather than matching nothing",
+    async (_label, pattern) => {
+      const { repo, snapshot } = await headSnapshot("overlay-basic");
+
+      // Silently escaping an unsupported construct would make it match nothing, so a
+      // tsconfig using it would analyze an empty file set and report no impact. For a
+      // tool whose empty result is meant to be meaningful, failing loudly is the only
+      // honest option.
+      expect(() => {
+        snapshot.host.globSync([join(repo.path, pattern)]);
+      }).toThrow(/unsupported syntax/);
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "still supports the documented subset",
+    async () => {
+      const { repo, snapshot } = await headSnapshot("overlay-basic");
+
+      expect(
+        snapshot.host.globSync([join(repo.path, "src/**/*.ts")]).length,
+      ).toBeGreaterThan(0);
+      expect(
+        snapshot.host.globSync([join(repo.path, "src/*.ts")]).length,
+      ).toBeGreaterThan(0);
+      expect(
+        snapshot.host.globSync([join(repo.path, "src/forma?.ts")]).length,
+      ).toBe(1);
+      expect(
+        snapshot.host.globSync([
+          join(repo.path, "src/**/*.ts"),
+          `!${join(repo.path, "src/format.ts")}`,
+        ]),
+      ).not.toContain(join(repo.path, "src/format.ts"));
+    },
+    TIMEOUT_MS,
+  );
+});
+
+describe("case sensitivity", () => {
+  it(
+    "does not resolve an import whose case differs from the committed path",
+    async () => {
+      const { repo, snapshot } = await headSnapshot("overlay-basic");
+
+      // Deliberate: a case-insensitive filesystem would resolve this, so a repository
+      // that builds on macOS could fail on Linux. omen reports it as missing on every
+      // platform rather than varying by host, which is what keeps output deterministic.
+      expect(
+        snapshot.host.fileExistsSync(join(repo.path, "src/FORMAT.ts")),
+      ).toBe(false);
+      expect(
+        snapshot.host.fileExistsSync(join(repo.path, "src/format.ts")),
+      ).toBe(true);
+      expect(snapshot.host.isCaseSensitive()).toBe(true);
+    },
+    TIMEOUT_MS,
+  );
+});
+
 describe("snapshot write protection", () => {
   it(
     "refuses every mutation rather than ignoring it",

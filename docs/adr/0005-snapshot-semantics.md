@@ -51,6 +51,28 @@ The working tree is never written to.
 - omen never installs dependencies, never reaches the network, never runs lifecycle
   scripts, and never executes repository code.
 
+## Amendment: path comparison is case-sensitive everywhere (2026-10-20)
+
+The snapshot reports itself as case-sensitive regardless of the host filesystem, so a path
+lookup matches only the exact case recorded in Git.
+
+**Why:** the alternative is to mirror the host, which makes resolution — and therefore the
+report — depend on the machine omen ran on. That contradicts the determinism rules, and
+byte-identical output across machines is a published guarantee.
+
+**Cost, stated plainly:** an import whose case differs from the committed path resolves on
+macOS and Windows but is reported by omen as an `unresolved-module` gap. A user whose
+project builds locally can see a gap they consider spurious. The mitigating fact is that
+the same import genuinely breaks on a case-sensitive filesystem, which is what most Linux
+CI runners use — so the gap reports a real portability bug rather than inventing one.
+
+A related bound, approved at the same time: the snapshot's glob support covers only the
+syntax `tsconfig.json` `include` and `exclude` are documented to use — `**`, `*`, `?`, and
+a leading `!`. Anything else raises a typed error instead of being escaped into a literal.
+A silently non-matching pattern would make a project analyze an empty file set and report
+no impact, which is the worst failure available to a tool whose empty result is meant to
+carry meaning.
+
 ## Alternatives considered
 
 **Check out each ref.** Rejected: mutates the working tree and can destroy uncommitted
