@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { mkdtemp, cp, mkdir, rm, readdir, stat } from "node:fs/promises";
-import { devNull, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
@@ -126,9 +126,11 @@ function isolatedGitEnv(homePath: string): NodeJS.ProcessEnv {
     HOME: homePath,
     USERPROFILE: homePath,
     XDG_CONFIG_HOME: join(homePath, ".config"),
-    // os.devNull rather than a literal: Windows needs \\.\nul, not /dev/null.
-    GIT_CONFIG_GLOBAL: devNull,
-    GIT_CONFIG_SYSTEM: devNull,
+    // A path that does not exist, rather than a null device. Git reads a missing config
+    // file as empty on every platform, whereas Git for Windows rejects the Windows null
+    // device outright: "fatal: unable to access '\\.\nul': Invalid argument".
+    GIT_CONFIG_GLOBAL: join(homePath, "absent.gitconfig"),
+    GIT_CONFIG_SYSTEM: join(homePath, "absent.gitconfig"),
     GIT_CONFIG_NOSYSTEM: "1",
     GIT_TERMINAL_PROMPT: "0",
     GIT_AUTHOR_NAME: FIXTURE_AUTHOR.name,
