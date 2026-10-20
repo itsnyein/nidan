@@ -8,13 +8,18 @@ Correctness and explicit limitations matter more than feature count.
 
 ## Sources of truth
 
-- Behavior spec, supported patterns, limitations: `docs/`
-- Decisions: `docs/adr/`
-- JSON output contract: `schema/`
+- Behavior — what omen analyzes and outputs:
+  `planning/spec/phase-1-technical-specification.md`
+- Project and process — stack, structure, workflow, governance, testing, docs,
+  release: `planning/decisions.md`
+- Public documentation derived from the spec: `docs/`, with decision records in
+  `docs/adr/` and the JSON output contract in `schema/`
+- Progress: `planning/STATUS.md`
 - Your task: the task prompt you were given. Do only what it asks.
-- `planning/STATUS.md` is the project status record.
-  Some of these locations are created by later tasks. If a source you need does not
-  exist yet, rely on your task prompt.
+
+`docs/`, `docs/adr/`, and `schema/` are created by later tasks; until then the spec
+is the behavior source. If these rules conflict with the spec or
+`planning/decisions.md`, stop and report. Do not reconcile silently.
 
 ## Commands
 
@@ -31,16 +36,25 @@ Correctness and explicit limitations matter more than feature count.
 Planned layout. Directories are created by the task that first needs them.
 
 - `src/cli/` argument parsing, exit codes, output writing (thin)
-- `src/git/` ref validation, diff, reading files from Git objects
+- `src/git/` ref validation, merge-base, diff, `ls-tree`, `cat-file`
 - `src/project/` snapshot file system, config discovery, program loading
 - `src/analysis/` seeds, identity, reference discovery, classification, gaps
 - `src/report/` projection, JSON and text reporters
+- `src/model.ts` result types matching the schema
+- `src/index.ts` `analyze(options)` → Result. Never exits the process, never
+  writes to stdout
+- `tests/fixtures/<case>/` `base/`, `head/`, `expected.json`, `README.md`
 - `tests/unit/`, `tests/integration/` test code
-- `tests/fixtures/` approved fixtures and golden expectations (frozen)
-- `docs/`, `docs/adr/` public documentation and decisions
 - `schema/` JSON Schema for the report
+- `demo/` pinned demo config and generated reports
+- `docs/`, `docs/adr/` public documentation and decision records
 - `website/` documentation site (separate package)
-- `planning/` private, Git-ignored planning, prompts, handoffs, reviews
+- `CHANGELOG.md` curated at each release (T5.8)
+- `planning/` private, Git-ignored: spec, decisions, status, prompts, handoffs,
+  reviews
+
+No `core/` directory. Directories map to pipeline stages. Approved fixtures under
+`tests/fixtures/` are frozen.
 
 ## Engineering rules
 
@@ -97,25 +111,49 @@ Review agent:
 - Do not modify `planning/STATUS.md`.
 - You may run tests and verification commands; generated or ignored
   artifacts are acceptable.
+- Work through the review checklist in `planning/decisions.md` §7, in order:
+  scope and integrity first, then verification, test meaningfulness,
+  correctness against the spec, code quality, docs and decisions.
 - Write your report to `planning/reviews/<task-id>.md`.
 
 All agents:
 
 - Git, allowed: read-only commands (`status`, `diff`, `log`, `show`), creating a
-  working branch, committing, pushing that branch, and opening a draft pull
-  request for the current task.
-- Git, forbidden: merging, force-pushing, tagging, deleting branches, rewriting
-  history, bypassing branch protection or required checks, and changing commit
-  authorship.
+  working branch, committing, pushing that branch, and opening a pull request
+  for the current task.
+- Git, forbidden: merging, force-pushing, amending pushed commits, tagging,
+  deleting branches, rewriting history, bypassing branch protection or required
+  checks, changing Git config, and changing commit authorship.
 - Work on a task branch, never directly on `main`. One task, one branch, one
-  pull request.
+  pull request. Maintainer-directed governance and configuration changes are the
+  only exception (`planning/decisions.md` §9).
 - Never merge your own pull request. The maintainer merges.
+
+## Task loop
+
+1. Work from the task prompt, the spec, and `planning/decisions.md`.
+2. If the task needs golden expectations, the matching `E` task comes first and
+   must be approved and merged by the maintainer before dependent tasks start.
+3. Implement on a branch, within the files the prompt allows.
+4. Run every command under Commands. Write the handoff and the review report.
+   Update `planning/STATUS.md`.
+5. Commit, push, open a pull request with the template filled in.
+6. Blocking review findings get at most two fix rounds. If findings remain after
+   the second round, stop: the task prompt is probably unclear.
+7. The maintainer merges. Continue with the next task that does not depend on an
+   unmerged pull request. If no task is unblocked, stop and list the pull
+   requests waiting to be merged.
+
+Task size is a reviewable diff: a few hundred lines of production code plus
+tests. "Implement M3" is too big.
 
 ## Commit messages
 
 Use one-line Conventional Commits in imperative mood (for example
-`feat: add git snapshot loader`). Never add `Co-authored-by`, a session link, or
-any other AI attribution.
+`feat: add git snapshot loader`). Allowed types: `feat`, `fix`, `docs`, `test`,
+`refactor`, `chore`, `ci`, `build`, `perf`, `style`, `revert`; optional scope;
+optional `!`. Never add `Co-authored-by`, a session link, or any other AI
+attribution.
 
 ## When to stop
 
