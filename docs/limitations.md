@@ -66,7 +66,15 @@ npm, pnpm, and yarn `node_modules` layouts are supported. PnP is not.
 
 Dependencies resolve from the current working tree's `node_modules`, not from either snapshot. Analysis of an old ref therefore uses today's installed packages.
 
-If `node_modules` is missing entirely, the run is `degraded` with the reason `dependencies-not-installed`. Individually missing packages produce `unresolved-module` gaps.
+If `node_modules` is missing **and** a file omen analyzed imports a package that does not
+resolve, the run is `degraded` with the reason `dependencies-not-installed`.
+
+Both halves matter. A project that imports nothing from `node_modules` resolves perfectly
+well without it, and degrading that run would be a false alarm. What counts is whether a
+specifier actually resolved, not how it is spelled — a path alias such as `@/lib/slug.js`
+looks like a package but is mapped by `paths`, so it needs no dependencies at all.
+
+Individually missing packages produce `unresolved-module` gaps.
 
 If `base` and `head` differ in their `package.json` dependency fields or their lockfile, the report carries a `dependency-manifest-changed` warning listing the changed package names. This is a warning only — it does not degrade the run.
 

@@ -42,12 +42,6 @@ export interface SnapshotFileSystemOptions {
   readonly repoRoot: string;
   /** The commit whose tree this snapshot serves. */
   readonly commitSha: string;
-  /**
-   * Absolute directories outside the repository that may still be read from disk — in
-   * practice only omen's own bundled TypeScript `lib.*.d.ts` folder. Everything else
-   * outside the repository is denied.
-   */
-  readonly externalReadRoots?: readonly string[];
 }
 
 /**
@@ -72,13 +66,6 @@ export async function createSnapshotFileSystem(
   // given root and be denied. Both spellings are therefore accepted, and the resolved one
   // is canonical.
   const repoRoot = resolveRealPath(givenRoot);
-  const externalReadRoots = (options.externalReadRoots ?? []).flatMap(
-    (root) => {
-      const given = toPosixPath(root);
-      const resolved = resolveRealPath(given);
-      return given === resolved ? [given] : [given, resolved];
-    },
-  );
 
   const entries = await listTree(options.repoRoot, options.commitSha);
   const symlinks: string[] = [];
@@ -112,7 +99,6 @@ export async function createSnapshotFileSystem(
   const host = new SnapshotHost({
     repoRoot,
     givenRoot,
-    externalReadRoots,
     files,
     directories,
   });
@@ -167,7 +153,6 @@ interface SnapshotHostState {
   readonly repoRoot: string;
   /** The root as the caller spelled it, accepted as an alias. */
   readonly givenRoot: string;
-  readonly externalReadRoots: readonly string[];
   readonly files: ReadonlyMap<string, string>;
   readonly directories: ReadonlySet<string>;
 }
@@ -197,7 +182,7 @@ class SnapshotHost implements FileSystemHost {
 
   private route(path: string): Route {
     const normalized = this.canonical(path);
-    const { repoRoot, externalReadRoots } = this.state;
+    const { repoRoot } = this.state;
 
     if (isWithin(joinPosix(repoRoot, NODE_MODULES), normalized)) {
       // Dependencies are not in the snapshot — they are never committed — so they come
@@ -209,9 +194,8 @@ class SnapshotHost implements FileSystemHost {
       // one would let an uncommitted edit silently change what omen reports about a ref.
       return "snapshot";
     }
-    if (externalReadRoots.some((root) => isWithin(root, normalized))) {
-      return "disk";
-    }
+    // Nothing outside the repository is readable. ts-morph serves its own bundled
+    // `lib.*.d.ts` internally, so the compiler never asks this host for them.
     return "denied";
   }
 

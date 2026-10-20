@@ -46,7 +46,10 @@ The report carries a run status describing how the analysis executed.
 | `degraded` | Completed, but something reduced confidence. Reasons are listed in the report  |
 | `failed`   | A snapshot or config could not be loaded; there are no results                 |
 
-A run is `degraded` when an inferred configuration was used instead of a real one, when compiler diagnostics exist in seed or usage files, or when `node_modules` is missing — reported as `dependencies-not-installed`.
+A run is `degraded` when an inferred configuration was used instead of a real one, when
+compiler diagnostics exist in seed or usage files, or when
+[dependencies are needed but not installed](limitations.md#dependencies-come-from-the-working-tree)
+— reported as `dependencies-not-installed`.
 
 **Run status describes tool execution only.** It says nothing about how complete the impact analysis is. An `ok` run is still bounded by the [supported patterns](supported-patterns.md) and the coverage statement.
 
