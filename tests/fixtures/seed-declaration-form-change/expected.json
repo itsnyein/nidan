@@ -1,0 +1,23 @@
+{
+  "description": "Changing the declaration form from a function declaration to an arrow-expression variable keeps the same key, so it is one modification rather than a delete plus an add.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/format.ts :: :: function :: formatRow",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/use.ts :: :: function :: render",
+            "site": { "file": "src/use.ts", "line": 4 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": []
+  }
+}

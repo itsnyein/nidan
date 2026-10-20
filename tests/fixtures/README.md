@@ -70,25 +70,26 @@ can be tightened deliberately.
 
 ## Cases
 
-| Case                                                                   | Proves                                                           |
-| ---------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| [`overlay-basic`](overlay-basic/README.md)                             | Each snapshot is served from its own Git objects                 |
-| [`config-tsconfig`](config-tsconfig/README.md)                         | A real `tsconfig.json` is discovered and used                    |
-| [`config-jsconfig-paths`](config-jsconfig-paths/README.md)             | `jsconfig.json` `paths` aliases resolve                          |
-| [`config-absent`](config-absent/README.md)                             | A missing config degrades the run, and says why                  |
-| [`manifest-changed`](manifest-changed/README.md)                       | A dependency change warns without degrading                      |
-| [`layout-npm`](layout-npm/README.md)                                   | Types resolve under a flat npm layout                            |
-| [`layout-yarn`](layout-yarn/README.md)                                 | Types resolve with a nested transitive dependency                |
-| [`layout-pnpm`](layout-pnpm/README.md)                                 | Types resolve through pnpm's symlinked layout                    |
-| [`leak-uncommitted`](leak-uncommitted/README.md)                       | A self-contained proof that the work tree is invisible           |
-| [`identity-overload`](identity-overload/README.md)                     | Overloads and their implementation are one callable              |
-| [`identity-nested`](identity-nested/README.md)                         | The container chain separates same-named nested functions        |
-| [`identity-default-exports`](identity-default-exports/README.md)       | Named, anonymous, and aliased default exports each key correctly |
-| [`identity-re-export`](identity-re-export/README.md)                   | A barrel re-export does not create a second identity             |
-| [`identity-static-vs-instance`](identity-static-vs-instance/README.md) | The static marker separates a static from an instance method     |
-| [`identity-constructor`](identity-constructor/README.md)               | A constructor resolves through its class, including `super()`    |
-| [`identity-collision`](identity-collision/README.md)                   | A duplicate key is reported, never guessed                       |
-| [`seed-whitespace-only`](seed-whitespace-only/README.md)               | Reformatting alone produces no seed                              |
-| [`seed-comment-change`](seed-comment-change/README.md)                 | A comment change is a modification                               |
-| [`seed-added-deleted`](seed-added-deleted/README.md)                   | Added, deleted, and untouched classified in one diff             |
-| [`seed-unmapped-change`](seed-unmapped-change/README.md)               | A change mapping to no callable becomes a gap                    |
+| Case                                                                     | Proves                                                           |
+| ------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| [`overlay-basic`](overlay-basic/README.md)                               | Each snapshot is served from its own Git objects                 |
+| [`config-tsconfig`](config-tsconfig/README.md)                           | A real `tsconfig.json` is discovered and used                    |
+| [`config-jsconfig-paths`](config-jsconfig-paths/README.md)               | `jsconfig.json` `paths` aliases resolve                          |
+| [`config-absent`](config-absent/README.md)                               | A missing config degrades the run, and says why                  |
+| [`manifest-changed`](manifest-changed/README.md)                         | A dependency change warns without degrading                      |
+| [`layout-npm`](layout-npm/README.md)                                     | Types resolve under a flat npm layout                            |
+| [`layout-yarn`](layout-yarn/README.md)                                   | Types resolve with a nested transitive dependency                |
+| [`layout-pnpm`](layout-pnpm/README.md)                                   | Types resolve through pnpm's symlinked layout                    |
+| [`leak-uncommitted`](leak-uncommitted/README.md)                         | A self-contained proof that the work tree is invisible           |
+| [`identity-overload`](identity-overload/README.md)                       | Overloads and their implementation are one callable              |
+| [`identity-nested`](identity-nested/README.md)                           | The container chain separates same-named nested functions        |
+| [`identity-default-exports`](identity-default-exports/README.md)         | Named, anonymous, and aliased default exports each key correctly |
+| [`identity-re-export`](identity-re-export/README.md)                     | A barrel re-export does not create a second identity             |
+| [`identity-static-vs-instance`](identity-static-vs-instance/README.md)   | The static marker separates a static from an instance method     |
+| [`identity-constructor`](identity-constructor/README.md)                 | A constructor resolves through its class, including `super()`    |
+| [`identity-collision`](identity-collision/README.md)                     | A duplicate key is reported, never guessed                       |
+| [`seed-whitespace-only`](seed-whitespace-only/README.md)                 | Reformatting alone produces no seed                              |
+| [`seed-comment-change`](seed-comment-change/README.md)                   | A comment change is a modification                               |
+| [`seed-declaration-form-change`](seed-declaration-form-change/README.md) | The declaration form does not affect the key                     |
+| [`seed-added-deleted`](seed-added-deleted/README.md)                     | Added, deleted, and untouched classified in one diff             |
+| [`seed-unmapped-change`](seed-unmapped-change/README.md)                 | A change mapping to no callable becomes a gap                    |
