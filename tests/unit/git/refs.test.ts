@@ -20,7 +20,11 @@ const TIMEOUT_MS = 30_000;
 const cleanups: Array<() => Promise<void>> = [];
 
 afterEach(async () => {
-  await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
+  // Reverse order, one at a time: a blob reader keeps a Git process alive inside the
+  // repository, and Windows refuses to remove a directory a live process is using.
+  for (const cleanup of cleanups.splice(0).reverse()) {
+    await cleanup();
+  }
 });
 
 async function repoWith(
