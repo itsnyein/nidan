@@ -188,16 +188,38 @@ describe("hunk ranges", () => {
   );
 
   it(
-    "reports several hunks when a file changed in several places",
+    "reports every hunk, with both complete ranges",
     async () => {
-      const result = await diffCase("seed-added-deleted");
-      const hunks = result.files[0]?.hunks ?? [];
-
-      expect(hunks.length).toBeGreaterThanOrEqual(1);
-      for (const hunk of hunks) {
-        expect(hunk.base.start).toBeGreaterThan(0);
-        expect(hunk.head.start).toBeGreaterThan(0);
+      // Separated edits, asserted exactly. The previous version of this test required
+      // only "at least one hunk with positive starts", which an implementation that
+      // returned just the first hunk would have satisfied.
+      const caseDir = await mkdtemp(join(tmpdir(), "omen-diff-case-"));
+      cleanups.push(() => rm(caseDir, { recursive: true, force: true }));
+      const lines = (first: string, last: string): string =>
+        [
+          `export const first = ${first};`,
+          "const a = 1;",
+          "const b = 2;",
+          "const c = 3;",
+          "const d = 4;",
+          `export const last = ${last};`,
+        ].join("\n") + "\n";
+      for (const [snapshot, text] of [
+        ["base", lines("1", "1")],
+        ["head", lines("2", "2")],
+      ] as const) {
+        await mkdir(join(caseDir, snapshot, "src"), { recursive: true });
+        await writeFile(join(caseDir, snapshot, "src", "a.ts"), text);
       }
+      const repo = await createFixtureRepo(caseDir);
+      cleanups.push(repo.cleanup);
+
+      const result = await diffCommits(repo.path, repo.baseSha, repo.headSha);
+
+      expect(result.files[0]?.hunks).toEqual([
+        { base: { start: 1, count: 1 }, head: { start: 1, count: 1 } },
+        { base: { start: 6, count: 1 }, head: { start: 6, count: 1 } },
+      ]);
     },
     TIMEOUT_MS,
   );

@@ -239,6 +239,31 @@ describe("openBlobReader", () => {
   );
 
   it(
+    "ignores an inherited GIT_DIR rather than reading another repository",
+    async () => {
+      const repo = await repoWith({
+        base: { "a.ts": "export const a = 1;\n" },
+        head: { "a.ts": "export const a = 2;\n" },
+      });
+      const entries = await listTree(repo.path, repo.baseSha);
+
+      // cat-file is spawned rather than run through the shared helper, so it has to take
+      // the scrubbed environment explicitly. Without it, GIT_DIR points this at a
+      // different object store entirely.
+      process.env["GIT_DIR"] = join(repo.path, "..", "not-a-repo");
+      try {
+        const reader = openBlobReader(repo.path);
+        cleanups.push(() => reader.close());
+        const contents = await reader.read(entries[0]?.oid ?? "");
+        expect(contents.toString("utf8")).toBe("export const a = 1;\n");
+      } finally {
+        delete process.env["GIT_DIR"];
+      }
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
     "closes idempotently and refuses reads afterwards",
     async () => {
       const repo = await repoWith({

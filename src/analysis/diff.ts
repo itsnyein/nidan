@@ -1,5 +1,5 @@
+import { runDiff, runDiffNameStatus } from "../git/diff.js";
 import { GitError } from "../git/errors.js";
-import { runGit } from "../git/exec.js";
 
 /** Extensions omen analyzes. Anything else is counted and ignored. */
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"] as const;
@@ -49,6 +49,9 @@ export interface DiffResult {
  * Letting Git detect the rename would produce a file-level match that the identity model
  * cannot honour, and the mismatch would surface as confusing results rather than as the
  * documented limitation.
+ *
+ * Every other output-affecting diff setting is pinned in `src/git/diff.ts`, so the same
+ * two commits produce the same hunks regardless of attributes, config, or environment.
  */
 export async function diffCommits(
   repoRoot: string,
@@ -122,11 +125,7 @@ async function listChangedFiles(
   baseSha: string,
   headSha: string,
 ): Promise<ChangedFile[]> {
-  const { stdout } = await runGit(repoRoot, [
-    "diff",
-    "--name-status",
-    "--no-renames",
-    "-z",
+  const { stdout } = await runDiffNameStatus(repoRoot, [
     "--end-of-options",
     baseSha,
     headSha,
@@ -175,11 +174,9 @@ async function readHunks(
   headSha: string,
   path: string,
 ): Promise<Hunk[]> {
-  const { stdout } = await runGit(repoRoot, [
-    "diff",
-    "--unified=0",
-    "--no-renames",
-    "--no-color",
+  // Every output-affecting setting is pinned by runDiff; see src/git/diff.ts. The path
+  // after `--` is matched literally, because runGit passes --literal-pathspecs.
+  const { stdout } = await runDiff(repoRoot, [
     "--end-of-options",
     baseSha,
     headSha,
