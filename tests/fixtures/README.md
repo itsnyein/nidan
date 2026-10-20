@@ -73,7 +73,6 @@ can be tightened deliberately.
 | Case                                                       | Proves                                                 |
 | ---------------------------------------------------------- | ------------------------------------------------------ |
 | [`overlay-basic`](overlay-basic/README.md)                 | Each snapshot is served from its own Git objects       |
-| [`leak-working-tree`](leak-working-tree/README.md)         | The working tree never reaches results                 |
 | [`config-tsconfig`](config-tsconfig/README.md)             | A real `tsconfig.json` is discovered and used          |
 | [`config-jsconfig-paths`](config-jsconfig-paths/README.md) | `jsconfig.json` `paths` aliases resolve                |
 | [`config-absent`](config-absent/README.md)                 | A missing config degrades the run, and says why        |

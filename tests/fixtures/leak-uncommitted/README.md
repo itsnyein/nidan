@@ -13,8 +13,7 @@ The harness overlays `worktree/` after both commits:
 
 Exactly one usage is expected, from `src/report.ts`. The count is the assertion.
 
-`leak-working-tree` describes the same setup in prose and relies on its consuming test to
-perform it. A case that depends on an external step passes trivially when that step is
-forgotten, which is the one failure mode a leak test must not have — so this case exists
-to replace it. Removing the older case needs maintainer approval, since it is already
-approved and frozen; until then both are present and only this one is self-contained.
+This replaced an earlier `leak-working-tree` case that described the same setup in prose
+and relied on its consuming test to perform it. A case that depends on an external step
+passes trivially when that step is forgotten, which is the one failure mode a leak test
+must not have. The older case was removed with maintainer approval once this one existed.
