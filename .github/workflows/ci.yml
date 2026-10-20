@@ -5,6 +5,15 @@ on:
   push:
     branches: [main]
 
+# One run per ref. A pull request only ever needs its newest commit checked, so a
+# superseded run is cancelled rather than left competing for runners — on this plan the
+# macOS pool is small enough that two concurrent runs leave one queueing until it is
+# killed. Pushes to `main` are never cancelled: that history is what the branch is
+# judged on, and losing a result there would leave a commit with no verdict.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
@@ -32,6 +41,14 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         node: ["22", "24"]
+        exclude:
+          # macOS runs the Active LTS only. It is billed at ten times the minute rate on
+          # a private repository, and its value here is platform coverage — symlink and
+          # realpath behaviour — which does not vary by Node version. Ubuntu and Windows
+          # still cover every non-EOL LTS. See decisions.md §9; restore the full matrix
+          # when the repository goes public.
+          - os: macos-latest
+            node: "22"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@d9184bf108216479bc5a137cc391f4d7b14c870b # v6.1.0
