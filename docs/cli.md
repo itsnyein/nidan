@@ -1,18 +1,51 @@
 # CLI
 
-> **Status: specified, not yet implemented.** See [Documentation status](README.md#documentation-status).
+> **Status: implemented**, except that the `degraded` reason for compiler diagnostics activates with seed mapping (M2). See [Documentation status](README.md#documentation-status).
 
-## Inputs
+## Usage
 
-| Input         | Required | Default                          | Purpose                                        |
-| ------------- | -------- | -------------------------------- | ---------------------------------------------- |
-| `base` ref    | Yes      | —                                | The ref to compare from                        |
-| `head` ref    | Yes      | —                                | The ref to compare to                          |
-| Project root  | No       | Current working directory        | The repository to analyze                      |
-| Config path   | No       | Discovered from the project root | An explicit `tsconfig.json` or `jsconfig.json` |
-| Output format | No       | —                                | `text` or `json`                               |
+```
+omen <base> <head> [options]
+```
 
-The exact flag spellings are fixed when the argument surface is implemented. Once published they become part of the [public contract](README.md#what-is-public-contract).
+## Arguments and flags
+
+| Flag                     | Input                                       | Default                             | Example                                              |
+| ------------------------ | ------------------------------------------- | ----------------------------------- | ---------------------------------------------------- |
+| `<base>`                 | The ref to compare from                     | required                            | `omen main feature`                                  |
+| `<head>`                 | The ref to compare to                       | required                            | `omen main feature`                                  |
+| `-C, --directory <path>` | Project directory to analyze                | current directory                   | `omen main HEAD -C ../app`                           |
+| `--config <path>`        | Explicit `tsconfig.json` or `jsconfig.json` | discovered from the repository root | `omen main HEAD --config packages/web/tsconfig.json` |
+| `--format <format>`      | Output format: `text` or `json`             | `text`                              | `omen main HEAD --format json`                       |
+| `-V, --version`          | Print the version and exit                  | —                                   | `omen --version`                                     |
+| `-h, --help`             | Print help and exit                         | —                                   | `omen --help`                                        |
+
+## How paths resolve
+
+`--directory` is the directory omen behaves as though it were started in, the same sense
+git gives `-C`. It resolves against the directory you ran the command from.
+
+Everything else relative resolves against **`--directory`**, not against the directory you
+ran from. Moving where you invoke omen, without moving the paths you pass, can never
+silently change which files it reads.
+
+- `--directory` resolves against the invocation directory.
+- `--config` resolves against `--directory`. An absolute path is used as given.
+- The **repository root** is discovered by searching upward from `--directory`, so a
+  subdirectory is a valid place to start.
+- Paths in the output are **repository-relative** and POSIX, never absolute. See
+  [determinism](output.md#determinism).
+
+```sh
+# From anywhere: analyze ../app with the config at ../app/packages/web/tsconfig.json
+omen main HEAD -C ../app --config packages/web/tsconfig.json
+```
+
+A `--config` that resolves outside the repository, or to a file absent from the compared
+snapshot, is an input error and exits `2`.
+
+These spellings are [public contract](README.md#what-is-public-contract). Changing one is
+a breaking change.
 
 ## Refs and what is compared
 

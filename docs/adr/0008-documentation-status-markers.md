@@ -54,6 +54,14 @@ inverts the dependency: the fixture harness and the `E` tasks need written behav
 work against, and `decisions.md` places the behavior documentation before them
 deliberately.
 
+**Amendment (2026-10-20):** a document implemented apart from one named part may narrow
+its marker to a single clause stating the exception, rather than carrying the blanket
+marker or dropping it. `docs/cli.md` is the first case — its flags and exit codes became
+contract in T1.4 while one `degraded` reason still waits on seed mapping. The blanket
+marker would have understated a published contract; removing it would have overclaimed.
+One clause is not the per-section marking rejected below: it names a single exception in
+the document's own status line.
+
 **A per-section marker rather than per-document.** More precise for partially implemented
 pages. Rejected as too noisy — a page with a marker on every other heading is harder to
 read than the thing it clarifies.

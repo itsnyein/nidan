@@ -35,3 +35,5 @@ Phase 1 is specified but not yet fully built. Every document in this set opens w
 > **Status: specified, not yet implemented.**
 
 The line states that the document describes agreed Phase 1 behavior that does not exist in code yet. The task that implements a given area removes the line from the matching document. A document without the line describes behavior you can rely on from the version that ships it.
+
+A document that is implemented apart from one named part says so, rather than claiming either extreme. [CLI](cli.md) is the current example: its flags and exit codes are contract today, while one `degraded` reason waits on later work.
