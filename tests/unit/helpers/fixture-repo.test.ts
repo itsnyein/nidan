@@ -1,5 +1,13 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, rm, writeFile, access } from "node:fs/promises";
+import {
+  access,
+  mkdtemp,
+  mkdir,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -33,16 +41,24 @@ async function tempDir(): Promise<string> {
 async function writeCase(files: {
   base: Record<string, string>;
   head: Record<string, string>;
+  node_modules?: Record<string, string>;
+  worktree?: Record<string, string>;
+  links?: { links: Array<{ path: string; target: string }> };
 }): Promise<string> {
   const caseDir = await tempDir();
   await writeFile(join(caseDir, "expected.json"), '{"seeds":[]}\n');
   await writeFile(join(caseDir, "README.md"), "# case\n");
 
-  for (const [snapshot, entries] of Object.entries(files)) {
-    await mkdir(join(caseDir, snapshot));
+  const { links, ...directories } = files;
+  for (const [directory, entries] of Object.entries(directories)) {
     for (const [relativePath, contents] of Object.entries(entries)) {
-      await writeFile(join(caseDir, snapshot, relativePath), contents);
+      const absolute = join(caseDir, directory, relativePath);
+      await mkdir(join(absolute, ".."), { recursive: true });
+      await writeFile(absolute, contents);
     }
+  }
+  if (links !== undefined) {
+    await writeFile(join(caseDir, "links.json"), JSON.stringify(links));
   }
   return caseDir;
 }
@@ -281,6 +297,140 @@ describe("createFixtureRepo", () => {
         delete process.env["GIT_AUTHOR_NAME"];
         delete process.env["GIT_AUTHOR_DATE"];
       }
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "copies node_modules into the work tree without committing it",
+    async () => {
+      const caseDir = await writeCase({
+        base: { "a.ts": "1\n" },
+        head: { "a.ts": "2\n" },
+        node_modules: { "left-pad/package.json": '{"name":"left-pad"}\n' },
+      });
+
+      const repo = await build(caseDir);
+
+      expect(
+        await readFile(
+          join(repo.path, "node_modules", "left-pad", "package.json"),
+          "utf8",
+        ),
+      ).toBe('{"name":"left-pad"}\n');
+      // Absent from both commits: dependencies are read from disk, never from a snapshot.
+      for (const ref of [repo.baseRef, repo.headRef]) {
+        const files = await filesAt(repo.path, ref);
+        expect(files.some((file) => file.startsWith("node_modules/"))).toBe(
+          false,
+        );
+      }
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "overlays the work tree so it disagrees with head",
+    async () => {
+      const caseDir = await writeCase({
+        base: { "a.ts": "1\n" },
+        head: { "a.ts": "2\n" },
+        worktree: { "a.ts": "3\n", "untracked.ts": "4\n" },
+      });
+
+      const repo = await build(caseDir);
+
+      // On disk the overlay wins...
+      expect(await readFile(join(repo.path, "a.ts"), "utf8")).toBe("3\n");
+      // ...while head keeps its own content and never gains the untracked file.
+      expect(await fileAt(repo.path, repo.headRef, "a.ts")).toBe("2");
+      expect(await filesAt(repo.path, repo.headRef)).toEqual(["a.ts"]);
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "leaves the overlay visible to git as uncommitted change",
+    async () => {
+      const caseDir = await writeCase({
+        base: { "a.ts": "1\n" },
+        head: { "a.ts": "2\n" },
+        worktree: { "a.ts": "3\n", "untracked.ts": "4\n" },
+      });
+
+      const repo = await build(caseDir);
+
+      // A leak fixture is only meaningful if the work tree really is dirty. If this ever
+      // reported a clean tree, the leak case would pass without proving anything.
+      const status = await git(["status", "--porcelain"], repo.path);
+      expect(status).toContain("a.ts");
+      expect(status).toContain("untracked.ts");
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "creates directory links described by links.json",
+    async () => {
+      const caseDir = await writeCase({
+        base: { "a.ts": "1\n" },
+        head: { "a.ts": "2\n" },
+        node_modules: {
+          ".pnpm/ms@2.1.3/node_modules/ms/package.json": '{"name":"ms"}\n',
+        },
+        links: {
+          links: [
+            {
+              path: "node_modules/ms",
+              target: "node_modules/.pnpm/ms@2.1.3/node_modules/ms",
+            },
+          ],
+        },
+      });
+
+      const repo = await build(caseDir);
+
+      // Reading through the link is what a pnpm layout requires of module resolution.
+      expect(
+        await readFile(
+          join(repo.path, "node_modules", "ms", "package.json"),
+          "utf8",
+        ),
+      ).toBe('{"name":"ms"}\n');
+      const resolved = await realpath(join(repo.path, "node_modules", "ms"));
+      expect(resolved).toContain(".pnpm");
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "rejects a links.json entry whose target is not a directory",
+    async () => {
+      const caseDir = await writeCase({
+        base: { "a.ts": "1\n" },
+        head: { "a.ts": "2\n" },
+        links: { links: [{ path: "node_modules/ms", target: "nowhere" }] },
+      });
+
+      await expect(createFixtureRepo(caseDir)).rejects.toThrow(
+        /not a directory/,
+      );
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "rejects a malformed links.json",
+    async () => {
+      const caseDir = await writeCase({
+        base: { "a.ts": "1\n" },
+        head: { "a.ts": "2\n" },
+      });
+      await writeFile(join(caseDir, "links.json"), "{ not json");
+
+      await expect(createFixtureRepo(caseDir)).rejects.toThrow(
+        /not valid JSON/,
+      );
     },
     TIMEOUT_MS,
   );

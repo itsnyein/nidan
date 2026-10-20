@@ -4,11 +4,31 @@ One fixture case tests one behavior. A case is a directory:
 
 ```text
 <case>/
-├── base/          # the source tree at the base ref
-├── head/          # the source tree at the head ref
-├── expected.json  # the golden expectation, written by hand
-└── README.md      # the single behavior under test, and why
+├── base/           # the source tree at the base ref
+├── head/           # the source tree at the head ref
+├── node_modules/   # optional: installed dependencies, never committed
+├── worktree/       # optional: files overlaid on the work tree, never committed
+├── links.json      # optional: directory symlinks to create in the work tree
+├── expected.json   # the golden expectation, written by hand
+└── README.md       # the single behavior under test, and why
 ```
+
+`base/` and `head/` become the two commits. Everything else lands **after** the commits
+and exists only in the work tree, which is what makes it useful:
+
+- **`node_modules/`** — dependencies are read from disk, never from a snapshot, so a case
+  that needs installed packages puts them here.
+- **`worktree/`** — an overlay, not a replacement. It names only the files that should
+  differ from head, which is how a leak case makes the work tree disagree with the
+  committed tree, and how it adds an untracked file.
+- **`links.json`** — `{ "links": [{ "path": "...", "target": "..." }] }`, both
+  repository-relative. Directory links only.
+
+Symlinks are described in a manifest rather than committed, because Git for Windows checks
+symlinks out as plain text files by default: a committed pnpm layout would silently become
+a directory of path strings there. Creating them at test time gives one representation that
+works everywhere — real symlinks on POSIX, junctions on Windows, which need no elevated
+privileges and resolve through `realpath` the same way.
 
 The harness in `tests/helpers/fixture-repo.ts` builds a temporary Git repository with two
 commits from `base/` and `head/`, reachable as the refs `base` and `head`. Tests run omen

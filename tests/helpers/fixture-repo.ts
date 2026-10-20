@@ -1,5 +1,14 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, cp, mkdir, rm, readdir, stat } from "node:fs/promises";
+import {
+  mkdtemp,
+  cp,
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  symlink,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -19,6 +28,24 @@ const FIXTURE_AUTHOR = {
 
 const BASE_REF = "base";
 const HEAD_REF = "head";
+
+/** Copied into `<repo>/node_modules` after the commits, never committed. */
+const NODE_MODULES_DIR = "node_modules";
+/** Overlaid onto the work tree after the commits, never committed. */
+const WORKTREE_DIR = "worktree";
+/** Describes directory symlinks to create in the work tree. See {@link LinkManifest}. */
+const LINKS_FILE = "links.json";
+
+interface LinkSpec {
+  /** Repository-relative path of the link to create. */
+  readonly path: string;
+  /** Repository-relative path the link points at. */
+  readonly target: string;
+}
+
+interface LinkManifest {
+  readonly links: readonly LinkSpec[];
+}
 
 export class FixtureRepoError extends Error {
   override readonly name = "FixtureRepoError";
@@ -73,6 +100,11 @@ export async function createFixtureRepo(caseDir: string): Promise<FixtureRepo> {
     // before the harness returns, which is what callers resolve against.
     await git(["branch", BASE_REF, baseSha], repoPath, env);
 
+    // Everything below lands after the last commit and is never staged, so it exists only
+    // in the work tree. That is the point: dependencies are read from disk rather than
+    // from a snapshot, and a leak case needs the work tree to disagree with head.
+    await applyWorkingTree(caseDir, repoPath);
+
     return {
       path: repoPath,
       baseRef: BASE_REF,
@@ -85,6 +117,120 @@ export async function createFixtureRepo(caseDir: string): Promise<FixtureRepo> {
     // A half-built repository is never handed back, and never left on disk.
     await cleanup();
     throw error;
+  }
+}
+
+/**
+ * Applies a case's optional uncommitted content: `node_modules/`, a `worktree/` overlay,
+ * and directory symlinks described by `links.json`. Each part is optional, and a case
+ * with none of them behaves exactly as it did before.
+ */
+async function applyWorkingTree(
+  caseDir: string,
+  repoPath: string,
+): Promise<void> {
+  if (await isDirectory(join(caseDir, NODE_MODULES_DIR))) {
+    await cp(
+      join(caseDir, NODE_MODULES_DIR),
+      join(repoPath, NODE_MODULES_DIR),
+      {
+        recursive: true,
+      },
+    );
+  }
+
+  if (await isDirectory(join(caseDir, WORKTREE_DIR))) {
+    // Overlay, not replace: `worktree/` names only the files it wants to differ from
+    // head, so a case can dirty one file without restating the whole tree.
+    await cp(join(caseDir, WORKTREE_DIR), repoPath, {
+      recursive: true,
+      force: true,
+    });
+  }
+
+  await createLinks(caseDir, repoPath);
+}
+
+/**
+ * Creates the directory symlinks a case asks for.
+ *
+ * Links are described in a manifest rather than committed as symlinks, because Git for
+ * Windows checks symlinks out as plain text files by default — a committed pnpm layout
+ * would silently become a directory of path strings there. Creating them at test time
+ * keeps one representation that works on every platform.
+ *
+ * Windows gets junctions. A junction points at a directory, needs no elevated privileges,
+ * and is what `realpath` resolves through — which is the behavior a pnpm layout exercises.
+ * File symlinks are deliberately unsupported: on Windows they require Developer Mode or
+ * administrator rights, and no fixture needs them.
+ */
+async function createLinks(caseDir: string, repoPath: string): Promise<void> {
+  const manifestPath = join(caseDir, LINKS_FILE);
+  let raw: string;
+  try {
+    raw = await readFile(manifestPath, "utf8");
+  } catch {
+    return;
+  }
+
+  const manifest = parseLinkManifest(raw, manifestPath);
+  for (const link of manifest.links) {
+    const linkPath = join(repoPath, link.path);
+    const targetPath = join(repoPath, link.target);
+    if (!(await isDirectory(targetPath))) {
+      throw new FixtureRepoError(
+        `${LINKS_FILE} in "${caseDir}" points "${link.path}" at "${link.target}", which is not a directory`,
+      );
+    }
+    await mkdir(join(linkPath, ".."), { recursive: true });
+    await symlink(targetPath, linkPath, "junction");
+  }
+}
+
+function parseLinkManifest(raw: string, manifestPath: string): LinkManifest {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new FixtureRepoError(`${manifestPath} is not valid JSON`, {
+      cause: error,
+    });
+  }
+
+  if (typeof parsed !== "object" || parsed === null || !("links" in parsed)) {
+    throw new FixtureRepoError(
+      `${manifestPath} must be an object with a "links" array`,
+    );
+  }
+  const { links } = parsed;
+  if (!Array.isArray(links)) {
+    throw new FixtureRepoError(
+      `${manifestPath} must be an object with a "links" array`,
+    );
+  }
+
+  return {
+    links: links.map((entry, index) => {
+      if (
+        typeof entry !== "object" ||
+        entry === null ||
+        typeof (entry as { path?: unknown }).path !== "string" ||
+        typeof (entry as { target?: unknown }).target !== "string"
+      ) {
+        throw new FixtureRepoError(
+          `${manifestPath} link ${String(index)} needs string "path" and "target" fields`,
+        );
+      }
+      return entry as LinkSpec;
+    }),
+  };
+}
+
+async function isDirectory(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isDirectory();
+  } catch {
+    return false;
   }
 }
 
