@@ -350,7 +350,7 @@ describe("createFixtureRepo", () => {
   );
 
   it(
-    "leaves the overlay visible to git as uncommitted change",
+    "really does leave the work tree disagreeing with head",
     async () => {
       const caseDir = await writeCase({
         base: { "a.ts": "1\n" },
@@ -360,10 +360,22 @@ describe("createFixtureRepo", () => {
 
       const repo = await build(caseDir);
 
-      // A leak fixture is only meaningful if the work tree really is dirty. If this ever
-      // reported a clean tree, the leak case would pass without proving anything.
+      // A leak fixture is only meaningful if the work tree really is dirty, so assert it
+      // rather than assuming the overlay did something.
+      //
+      // Compared against the committed blob rather than `git status`: `a.ts` is the same
+      // size in head and in the overlay, and Git's index trusts stat data, so on a
+      // filesystem with coarse mtime resolution status can report the file as clean. That
+      // is a Git-index artifact and not something omen depends on — omen reads sources
+      // from Git objects and never consults the work tree — but the disk content must
+      // genuinely differ or the leak case proves nothing.
+      const onDisk = await readFile(join(repo.path, "a.ts"), "utf8");
+      const inHead = await fileAt(repo.path, repo.headRef, "a.ts");
+      expect(onDisk.trim()).not.toBe(inHead.trim());
+      expect(onDisk).toBe("3\n");
+
+      // The untracked file has no index entry at all, so Git reports it reliably.
       const status = await git(["status", "--porcelain"], repo.path);
-      expect(status).toContain("a.ts");
       expect(status).toContain("untracked.ts");
     },
     TIMEOUT_MS,
