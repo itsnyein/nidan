@@ -45,7 +45,8 @@ The working tree is never written to.
 - A manifest or lockfile difference between the refs produces a warning naming the changed
   packages, but does not degrade the run — the analysis is still valid, just caveated.
 - Missing `node_modules` degrades the run with a `dependencies-not-installed` reason
-  rather than failing it.
+  rather than failing it, and only when an analyzed file actually has a package import
+  that failed to resolve.
 - Symlinks and submodules inside a snapshot are skipped and counted, because a Git tree
   entry for a symlink is a path string, not a file.
 - omen never installs dependencies, never reaches the network, never runs lifecycle

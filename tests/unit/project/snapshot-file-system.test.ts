@@ -164,7 +164,7 @@ describe("snapshot routing", () => {
   );
 
   it(
-    "allows reads under an explicitly declared external root",
+    "denies a path outside the repository even when it exists on disk",
     async () => {
       const repo = await openCase("overlay-basic");
       const outside = join(repo.path, "..", "libs");
@@ -175,12 +175,16 @@ describe("snapshot routing", () => {
       const snapshot = await createSnapshotFileSystem({
         repoRoot: repo.path,
         commitSha: repo.headSha,
-        externalReadRoots: [outside],
       });
 
-      expect(snapshot.host.readFileSync(join(outside, "lib.d.ts"))).toContain(
-        "declare const x",
+      // There is no escape hatch. ts-morph serves its own bundled lib files internally,
+      // so nothing legitimate needs to read outside the repository.
+      expect(snapshot.host.fileExistsSync(join(outside, "lib.d.ts"))).toBe(
+        false,
       );
+      expect(() => {
+        snapshot.host.readFileSync(join(outside, "lib.d.ts"));
+      }).toThrow(/outside the repository/);
     },
     TIMEOUT_MS,
   );
