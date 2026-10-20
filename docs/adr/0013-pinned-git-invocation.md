@@ -42,9 +42,16 @@ per command family, and never inherited.**
 The environment is dropped wholesale rather than by denylist. A denylist names the
 variables that exist today, and Git keeps adding them.
 
-A regression test accompanies each route, and each was confirmed to fail when its flag is
-removed. One is explicitly a pin-guard rather than a reproduction: the inputs tested do
-not diverge across diff algorithms, so that test fails only if the pin is removed.
+A regression test accompanies each route, and **each was confirmed to fail when its flag
+is removed**.
+
+The algorithm route needed work to reach that bar. An obvious test — two isolated
+substitutions in a nine-line file — produces identical hunks under all four algorithms, so
+it passed with the pin removed and proved nothing. Input on which the algorithms actually
+disagree had to be found by search rather than constructed by intuition: repeated lines
+give the matchers more than one defensible alignment, and Myers then reports three hunks
+where histogram and patience report two, covering different lines. That input is what the
+test uses.
 
 ## Consequences
 

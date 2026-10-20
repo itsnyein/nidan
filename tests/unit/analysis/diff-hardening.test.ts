@@ -247,22 +247,42 @@ describe("config cannot change the reported ranges", () => {
     TIMEOUT_MS,
   );
 
+  /**
+   * Input on which the algorithms genuinely disagree, found by searching rather than
+   * guessed: the repeated `send();` lines give the matchers more than one defensible
+   * alignment. Myers and minimal report three hunks; histogram and patience report two,
+   * covering different lines entirely. Most edits produce identical output under all
+   * four, which is why a naive case cannot test this at all.
+   */
+  const DIVERGENT_BASE = "  log();\n  send();\n  return 1;\n  send();\n";
+  const DIVERGENT_HEAD =
+    "  init();\n  send();\n  send();\n  return 1;\n  init();\n";
+
+  /** What Myers reports, which is what the pin selects. */
+  const MYERS_HUNKS: Hunk[] = [
+    { base: { start: 1, count: 1 }, head: { start: 1, count: 1 } },
+    { base: { start: 3, count: 1 }, head: { start: 2, count: 0 } },
+    { base: { start: 4, count: 0 }, head: { start: 4, count: 2 } },
+  ];
+
   it.each([["histogram"], ["patience"], ["minimal"]])(
-    "reports identical ranges with diff.algorithm=%s",
+    "reports the pinned algorithm's ranges despite diff.algorithm=%s",
     async (algorithm) => {
-      // A pin-guard rather than a reproduction. These inputs produce the same hunks under
-      // all four algorithms, so this test does not currently reproduce a divergence — it
-      // fails only if someone removes `--diff-algorithm`. Algorithms do disagree on
-      // larger, more repetitive inputs, and the pin is what stops that reaching output.
       const repo = await buildRepo({
-        base: { "a.ts": NINE_LINES("1", "1") },
-        head: { "a.ts": NINE_LINES("2", "2") },
+        base: { "a.ts": DIVERGENT_BASE },
+        head: { "a.ts": DIVERGENT_HEAD },
       });
-      const expected = await hunksOf(repo, "a.ts");
+
+      // Asserted before the config is set, so a failure here says the pin is wrong rather
+      // than that the config won.
+      expect(await hunksOf(repo, "a.ts")).toEqual(MYERS_HUNKS);
 
       await setRepoConfig(repo, "diff.algorithm", algorithm);
 
-      expect(await hunksOf(repo, "a.ts")).toEqual(expected);
+      // Unchanged. Without the pin, histogram and patience return two hunks at
+      // -1 +1,2 and -4 +5 — different ranges, so a callable would be attributed a change
+      // it never received while one that did would be missed.
+      expect(await hunksOf(repo, "a.ts")).toEqual(MYERS_HUNKS);
     },
     TIMEOUT_MS,
   );
