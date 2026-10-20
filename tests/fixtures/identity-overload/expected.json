@@ -1,0 +1,23 @@
+{
+  "description": "Overload signatures and their implementation are one callable, and the signature is not part of the key, so adding an overload is a modification.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/parse.ts :: :: function :: parse",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/use.ts :: :: function :: render",
+            "site": { "file": "src/use.ts", "line": 4 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": []
+  }
+}

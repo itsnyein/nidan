@@ -1,0 +1,23 @@
+{
+  "description": "containerChain separates two nested functions that share a name, so only the changed one is seeded.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/outer.ts :: alpha :: function :: helper",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/outer.ts :: :: function :: alpha",
+            "site": { "file": "src/outer.ts", "line": 5 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": []
+  }
+}

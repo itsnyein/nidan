@@ -1,0 +1,30 @@
+{
+  "description": "A named default keys on its local name, an anonymous default on `default`, and `export default foo` is an alias so the identity stays `foo`.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/aliased-default.ts :: :: function :: toSlug",
+        "change": "modified",
+        "usages": [],
+        "valueReferences": [],
+        "gaps": []
+      },
+      {
+        "key": "src/anonymous-default.ts :: :: function :: default",
+        "change": "modified",
+        "usages": [],
+        "valueReferences": [],
+        "gaps": []
+      },
+      {
+        "key": "src/named-default.ts :: :: function :: formatLabel",
+        "change": "modified",
+        "usages": [],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": []
+  }
+}

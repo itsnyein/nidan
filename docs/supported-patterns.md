@@ -101,6 +101,34 @@ relativePosixPath :: containerChain :: declarationKind :: name [:: static]
 - The signature is **not** part of the key, so changing parameters or return type is a modification rather than a delete plus an add.
 - A named default export is keyed by its local name. An anonymous default export is keyed as `default`. In `export default foo`, the default is an alias, so the identity is `foo`.
 
+`declarationKind` is one of exactly three values:
+
+| Kind          | Covers                                                                                                                       |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `function`    | Named function declarations, named variables holding an arrow or function expression, and named or anonymous default exports |
+| `method`      | Instance and static methods. A static method carries the trailing `:: static`                                                |
+| `constructor` | A class constructor, keyed as `<path> :: <Class> :: constructor :: constructor`                                              |
+
+**How a callable is written does not affect its key.** `function` deliberately spans
+several syntactic forms, so rewriting a function declaration as an arrow-expression
+variable is a modification:
+
+```ts
+// before
+export function formatRow(value: string): string {
+  return value.trim();
+}
+
+// after — same key, reported as modified
+export const formatRow = (value: string): string => {
+  return value.trim();
+};
+```
+
+Keying these differently would report the change as a deletion plus an addition, and the
+usage report — the thing you most want when changing a declaration — would be split across
+two entries drawn from different snapshots.
+
 If one snapshot contains the same key twice, omen does **not** match the declarations. It emits an `ambiguous-identity` gap rather than guessing which is which.
 
 ### Constructors

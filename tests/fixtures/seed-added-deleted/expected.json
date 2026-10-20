@@ -1,0 +1,23 @@
+{
+  "description": "An added callable seeds from head, a deleted one from base, and an untouched one is not seeded at all.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/api.ts :: :: function :: added",
+        "change": "added",
+        "usages": [],
+        "valueReferences": [],
+        "gaps": []
+      },
+      {
+        "key": "src/api.ts :: :: function :: removed",
+        "change": "deleted",
+        "usages": [],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": []
+  }
+}
