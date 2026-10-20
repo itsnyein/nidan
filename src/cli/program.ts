@@ -35,9 +35,12 @@ export function createProgram(
       .argument("<head>", "ref to compare to")
       .option(
         "-C, --directory <path>",
-        "repository to analyze (default: current directory)",
+        "project directory to analyze; the repository root is found upward from it (default: current directory)",
       )
-      .option("--config <path>", "explicit tsconfig.json or jsconfig.json")
+      .option(
+        "--config <path>",
+        "explicit tsconfig.json or jsconfig.json, resolved against --directory",
+      )
       // Long form only. A short alias is cheap to add later and breaking to remove, so the
       // single-letter namespace stays unspent until something justifies it.
       .option(

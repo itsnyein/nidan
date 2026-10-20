@@ -48,7 +48,9 @@ describe("argument surface", () => {
   });
 
   it("documents every flag and the exit codes in help", () => {
-    const { output } = parse(["--help"]);
+    // Commander wraps descriptions, so compare against whitespace-collapsed text rather
+    // than asserting on an accidental line break.
+    const output = parse(["--help"]).output.replace(/\s+/g, " ");
 
     for (const fragment of [
       "<base>",
@@ -56,6 +58,8 @@ describe("argument surface", () => {
       "-C, --directory",
       "--config",
       "--format",
+      "resolved against --directory",
+      "found upward from it",
       "Exit codes:",
       "never depends on how many usages",
     ]) {
