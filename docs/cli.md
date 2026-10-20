@@ -1,18 +1,27 @@
 # CLI
 
-> **Status: specified, not yet implemented.** See [Documentation status](README.md#documentation-status).
+> **Status: implemented**, except that the `degraded` reason for compiler diagnostics activates with seed mapping (M2). See [Documentation status](README.md#documentation-status).
 
-## Inputs
+## Usage
 
-| Input         | Required | Default                          | Purpose                                        |
-| ------------- | -------- | -------------------------------- | ---------------------------------------------- |
-| `base` ref    | Yes      | —                                | The ref to compare from                        |
-| `head` ref    | Yes      | —                                | The ref to compare to                          |
-| Project root  | No       | Current working directory        | The repository to analyze                      |
-| Config path   | No       | Discovered from the project root | An explicit `tsconfig.json` or `jsconfig.json` |
-| Output format | No       | —                                | `text` or `json`                               |
+```
+omen <base> <head> [options]
+```
 
-The exact flag spellings are fixed when the argument surface is implemented. Once published they become part of the [public contract](README.md#what-is-public-contract).
+## Arguments and flags
+
+| Flag                     | Input                                       | Default                             | Example                                              |
+| ------------------------ | ------------------------------------------- | ----------------------------------- | ---------------------------------------------------- |
+| `<base>`                 | The ref to compare from                     | required                            | `omen main feature`                                  |
+| `<head>`                 | The ref to compare to                       | required                            | `omen main feature`                                  |
+| `-C, --directory <path>` | Repository to analyze                       | current directory                   | `omen main HEAD -C ../app`                           |
+| `--config <path>`        | Explicit `tsconfig.json` or `jsconfig.json` | discovered from the repository root | `omen main HEAD --config packages/web/tsconfig.json` |
+| `-f, --format <format>`  | Output format: `text` or `json`             | `text`                              | `omen main HEAD -f json`                             |
+| `-V, --version`          | Print the version and exit                  | —                                   | `omen --version`                                     |
+| `-h, --help`             | Print help and exit                         | —                                   | `omen --help`                                        |
+
+These spellings are [public contract](README.md#what-is-public-contract). Changing one is
+a breaking change.
 
 ## Refs and what is compared
 

@@ -6,8 +6,22 @@ import type { SnapshotFileSystem } from "./snapshot-file-system.js";
 /** Which configuration a run analyzed with. Reported in `run.analysisMode`. */
 export type AnalysisMode = "tsconfig" | "jsconfig" | "inferred";
 
+/**
+ * `invalid-config-path` means the user named a config omen cannot use, which is their
+ * input to fix. `unreadable-config` means the committed config itself is broken, which
+ * is a failed run.
+ */
+export type ConfigErrorKind = "invalid-config-path" | "unreadable-config";
+
 export class ConfigError extends Error {
   override readonly name = "ConfigError";
+
+  constructor(
+    readonly kind: ConfigErrorKind,
+    message: string,
+  ) {
+    super(message);
+  }
 }
 
 export interface DiscoveredConfig {
@@ -64,10 +78,16 @@ export function discoverConfig(
   if (explicitConfigPath !== undefined) {
     const absolute = toPosixPath(explicitConfigPath);
     if (!isWithin(root, absolute)) {
-      throw new ConfigError(`config ${absolute} is outside the repository`);
+      throw new ConfigError(
+        "invalid-config-path",
+        `config ${absolute} is outside the repository`,
+      );
     }
     if (!snapshot.host.fileExistsSync(absolute)) {
-      throw new ConfigError(`config ${absolute} is not in this snapshot`);
+      throw new ConfigError(
+        "invalid-config-path",
+        `config ${absolute} is not in this snapshot`,
+      );
     }
     return parseConfig(snapshot, root, absolute, modeForPath(absolute));
   }
@@ -106,6 +126,7 @@ function parseConfig(
   const parsed = ts.parseConfigFileTextToJson(absolute, text);
   if (parsed.error !== undefined) {
     throw new ConfigError(
+      "unreadable-config",
       `${absolute} is not valid JSON: ${messageOf(parsed.error)}`,
     );
   }
