@@ -53,8 +53,17 @@ async function build(caseDir: string): ReturnType<typeof createFixtureRepo> {
   return repo;
 }
 
+/**
+ * Inspects a repository built by the harness. Inherited `GIT_*` variables are stripped
+ * for the same reason the harness strips them: the isolation test deliberately sets
+ * `GIT_DIR`, and without this the inspection would read that decoy instead of the
+ * repository under test.
+ */
 async function git(args: string[], cwd: string): Promise<string> {
-  const { stdout } = await execFileAsync("git", args, { cwd });
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")),
+  );
+  const { stdout } = await execFileAsync("git", args, { cwd, env });
   return stdout.trim();
 }
 
