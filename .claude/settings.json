@@ -2,22 +2,35 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "deny": [
-      "Bash(git commit *)",
-      "Bash(git push *)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push * --force*)",
+      "Bash(git push * -f*)",
+      "Bash(git push * :*)",
+      "Bash(git push --delete*)",
+      "Bash(git push --mirror*)",
       "Bash(git tag *)",
       "Bash(git merge *)",
       "Bash(git rebase *)",
       "Bash(git reset *)",
-      "Bash(git checkout -b *)",
-      "Bash(git switch -c *)",
-      "Bash(git branch *)",
-      "Bash(gh pr *)",
+      "Bash(git branch -d*)",
+      "Bash(git branch -D*)",
+      "Bash(git branch -m*)",
+      "Bash(git branch -M*)",
+      "Bash(git filter-branch *)",
+      "Bash(git commit --amend*)",
+      "Bash(git config *)",
+      "Bash(gh pr merge *)",
+      "Bash(gh pr close *)",
       "Bash(gh repo *)",
-      "Bash(gh release *)"
+      "Bash(gh release *)",
+      "Bash(gh api --method DELETE*)",
+      "Bash(gh api -X DELETE*)"
     ]
   },
   "attribution": {
-    "commit": false,
-    "pr": false
+    "commit": "",
+    "pr": "",
+    "sessionUrl": false
   }
 }

@@ -87,8 +87,9 @@ Implementation agent:
   `planning/prompts/tasks/<task-id>-<slug>.md` if it is not already there.
 - Write your report to `planning/handoffs/<task-id>.md`.
 - At the end of your task, update `planning/STATUS.md`: current milestone, task
-  status, what changed, next task. Record facts only. Mark approval, commit,
-  push, and merge as pending until the maintainer confirms them.
+  status, what changed, next task. Record facts only. Record the commit, branch,
+  and pull request you created; mark review, approval, and merge as pending
+  until the maintainer confirms them.
 
 Review agent:
 
@@ -100,16 +101,21 @@ Review agent:
 
 All agents:
 
-- Git: read-only commands only (`status`, `diff`, `log`, `show`).
-  Never commit, push, tag, create branches, open PRs, or merge.
-- Never force-push, bypass branch protection, or change commit authorship.
+- Git, allowed: read-only commands (`status`, `diff`, `log`, `show`), creating a
+  working branch, committing, pushing that branch, and opening a draft pull
+  request for the current task.
+- Git, forbidden: merging, force-pushing, tagging, deleting branches, rewriting
+  history, bypassing branch protection or required checks, and changing commit
+  authorship.
+- Work on a task branch, never directly on `main`. One task, one branch, one
+  pull request.
+- Never merge your own pull request. The maintainer merges.
 
 ## Commit messages
 
-Suggest commit messages only; the maintainer commits. Use one-line
-Conventional Commits in imperative mood (for example
-`feat: add git snapshot loader`). Never add `Co-authored-by` or any AI
-attribution.
+Use one-line Conventional Commits in imperative mood (for example
+`feat: add git snapshot loader`). Never add `Co-authored-by`, a session link, or
+any other AI attribution.
 
 ## When to stop
 
