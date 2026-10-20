@@ -2,3 +2,9 @@ pnpm-lock.yaml
 node_modules/
 dist/
 coverage/
+
+# Fixture source is data, not code. Its exact bytes are the test: a whitespace-only
+# change between base/ and head/ must stay whitespace-only, and reformatting would
+# silently rewrite the behavior under test. The case README files are still formatted.
+tests/fixtures/*/base/
+tests/fixtures/*/head/

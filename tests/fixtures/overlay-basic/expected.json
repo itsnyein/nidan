@@ -1,0 +1,26 @@
+{
+  "description": "Each snapshot is served from its own Git objects: the changed callable is seeded from head and its caller is reported.",
+  "expect": {
+    "run": {
+      "status": "ok",
+      "analysisMode": "tsconfig"
+    },
+    "seeds": [
+      {
+        "key": "src/format.ts :: :: function :: formatRow",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/main.ts :: :: function :: render",
+            "site": { "file": "src/main.ts", "line": 4 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": []
+  }
+}

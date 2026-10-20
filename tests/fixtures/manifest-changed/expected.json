@@ -1,0 +1,33 @@
+{
+  "description": "A dependency difference between base and head warns and names the changed package, without degrading the run.",
+  "expect": {
+    "run": {
+      "status": "ok",
+      "analysisMode": "tsconfig",
+      "reasons": [],
+      "warnings": [
+        {
+          "kind": "dependency-manifest-changed",
+          "packages": ["ms"]
+        }
+      ]
+    },
+    "seeds": [
+      {
+        "key": "src/pad.ts :: :: function :: pad",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/main.ts :: module",
+            "site": { "file": "src/main.ts", "line": 3 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": []
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "description": "With no tsconfig or jsconfig, the run completes against an inferred configuration and is degraded with a reason naming it.",
+  "expect": {
+    "run": {
+      "status": "degraded",
+      "analysisMode": "inferred",
+      "reasons": ["inferred-config"]
+    },
+    "seeds": [
+      {
+        "key": "src/util.ts :: :: function :: identity",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/app.ts :: module",
+            "site": { "file": "src/app.ts", "line": 3 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": []
+  }
+}
