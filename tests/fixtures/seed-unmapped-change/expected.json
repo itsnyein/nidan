@@ -1,0 +1,15 @@
+{
+  "description": "A change to a type declaration maps to no callable, so it is reported as an unmapped-change gap rather than silently dropped.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [],
+    "repoWideGaps": [
+      {
+        "kind": "unmapped-change",
+        "snapshot": "head",
+        "site": { "file": "src/types.ts" },
+        "reasonCode": "no-enclosing-callable"
+      }
+    ]
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "description": "A reformatting-only change produces no seed: the token streams compare equal once whitespace is removed.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [],
+    "repoWideGaps": []
+  }
+}

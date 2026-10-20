@@ -1,0 +1,16 @@
+{
+  "description": "A JSDoc change inside a callable counts as a modification, because comments sit in the callable range and can carry meaning.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/calc.ts :: :: function :: total",
+        "change": "modified",
+        "usages": [],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": []
+  }
+}

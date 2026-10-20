@@ -1,0 +1,16 @@
+{
+  "description": "A static and an instance method sharing a name differ only by the trailing static marker, so changing the instance method seeds only it.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/registry.ts :: Registry :: method :: create",
+        "change": "modified",
+        "usages": [],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": []
+  }
+}

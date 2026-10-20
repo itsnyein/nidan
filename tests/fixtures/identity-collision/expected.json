@@ -1,0 +1,15 @@
+{
+  "description": "Two declarations sharing a structural key in one snapshot are not matched; an ambiguous-identity gap is reported instead.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [],
+    "repoWideGaps": [
+      {
+        "kind": "ambiguous-identity",
+        "snapshot": "head",
+        "site": { "file": "src/dup.js" },
+        "reasonCode": "duplicate-structural-key"
+      }
+    ]
+  }
+}

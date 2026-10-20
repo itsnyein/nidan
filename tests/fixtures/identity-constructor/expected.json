@@ -1,0 +1,43 @@
+{
+  "description": "A changed constructor resolves through the class symbol with the construct relation, finding both new and a subclass super().",
+  "expect": {
+    "run": {
+      "status": "ok",
+      "analysisMode": "tsconfig",
+      "reasons": []
+    },
+    "seeds": [
+      {
+        "key": "src/client.ts :: Client :: constructor :: constructor",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "construct",
+            "resolution": {
+              "status": "exact"
+            },
+            "from": "src/client.ts :: RetryingClient :: constructor :: constructor",
+            "site": {
+              "file": "src/client.ts",
+              "line": 9
+            }
+          },
+          {
+            "relation": "construct",
+            "resolution": {
+              "status": "exact"
+            },
+            "from": "src/use.ts :: :: function :: makeClient",
+            "site": {
+              "file": "src/use.ts",
+              "line": 4
+            }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": []
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "description": "A barrel re-export resolves to the original symbol, so one seed is reported with one usage, not two.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/format.ts :: :: function :: formatRow",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/consumer.ts :: :: function :: render",
+            "site": { "file": "src/consumer.ts", "line": 4 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": []
+  }
+}
