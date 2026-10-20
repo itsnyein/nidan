@@ -55,7 +55,7 @@ describe("argument surface", () => {
       "<head>",
       "-C, --directory",
       "--config",
-      "-f, --format",
+      "--format",
       "Exit codes:",
       "never depends on how many usages",
     ]) {
@@ -90,13 +90,24 @@ describe("argument surface", () => {
         "json",
       ],
     ],
-    ["short", ["-C", "/repo", "--config", "/repo/tsconfig.json", "-f", "json"]],
+    [
+      "the -C alias",
+      ["-C", "/repo", "--config", "/repo/tsconfig.json", "--format", "json"],
+    ],
   ])("accepts %s option spellings", (_label, flags) => {
     const { invocation } = parse(["main", "feature", ...flags]);
 
     expect(invocation?.options.directory).toBe("/repo");
     expect(invocation?.options.config).toBe("/repo/tsconfig.json");
     expect(invocation?.options.format).toBe("json");
+  });
+
+  it("has no short alias for --format", () => {
+    // Withheld deliberately: a short flag is cheap to add later and breaking to remove.
+    expect(parse(["main", "feature", "-f", "json"]).error?.code).toBe(
+      "commander.unknownOption",
+    );
+    expect(parse(["--help"]).output).not.toContain("-f, --format");
   });
 
   it("rejects an unknown format rather than guessing", () => {

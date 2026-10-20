@@ -90,8 +90,8 @@ describe("omen end to end", () => {
     async () => {
       const repo = await fixtureRepo("overlay-basic");
 
-      const first = await runCli(["base", "head", "-f", "json"], repo);
-      const second = await runCli(["base", "head", "-f", "json"], repo);
+      const first = await runCli(["base", "head", "--format", "json"], repo);
+      const second = await runCli(["base", "head", "--format", "json"], repo);
 
       expect(second.stdout).toBe(first.stdout);
       // Determinism is only meaningful if the output is non-trivial.
@@ -105,7 +105,10 @@ describe("omen end to end", () => {
     async () => {
       const repo = await fixtureRepo("overlay-basic");
 
-      const { stdout } = await runCli(["base", "head", "-f", "json"], repo);
+      const { stdout } = await runCli(
+        ["base", "head", "--format", "json"],
+        repo,
+      );
 
       expect(stdout).not.toContain(repo);
       expect(stdout).not.toContain("/private/");
@@ -134,7 +137,7 @@ describe("omen end to end", () => {
     async () => {
       const repo = await fixtureRepo("config-absent");
 
-      const result = await runCli(["base", "head", "-f", "json"], repo);
+      const result = await runCli(["base", "head", "--format", "json"], repo);
 
       expect(result.code).toBe(0);
       expect(JSON.parse(result.stdout)).toMatchObject({
@@ -149,7 +152,10 @@ describe("omen end to end", () => {
     async () => {
       const repo = await fixtureRepo("overlay-basic");
 
-      const { stdout } = await runCli(["base", "head", "-f", "json"], repo);
+      const { stdout } = await runCli(
+        ["base", "head", "--format", "json"],
+        repo,
+      );
       const report = JSON.parse(stdout) as {
         run: {
           refs: { baseSha: string; mergeBaseSha: string; headSha: string };
@@ -177,6 +183,90 @@ describe("omen end to end", () => {
       const result = await runCli(args, repo);
 
       expect(result.code).toBe(2);
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "finds the repository root from a subdirectory",
+    async () => {
+      const repo = await fixtureRepo("config-tsconfig");
+
+      // No --directory: the project directory defaults to the invocation cwd, and the
+      // repository root is discovered upward from there.
+      const result = await runCli(
+        ["base", "head", "--format", "json"],
+        join(repo, "src"),
+      );
+
+      expect(result.code).toBe(0);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        run: { status: "ok", analysisMode: "tsconfig" },
+      });
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "resolves --directory against the invocation cwd",
+    async () => {
+      const repo = await fixtureRepo("config-tsconfig");
+
+      const result = await runCli(
+        ["base", "head", "-C", "..", "--format", "json"],
+        join(repo, "src"),
+      );
+
+      expect(result.code).toBe(0);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        run: { status: "ok", analysisMode: "tsconfig" },
+      });
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "resolves a relative --config against --directory, not the cwd",
+    async () => {
+      const repo = await fixtureRepo("config-tsconfig");
+
+      // Run from src/ but point --directory at the repository root. `tsconfig.json` is
+      // relative to that root, not to src/, so it only resolves under the documented
+      // semantics. Resolving against the cwd would look for src/tsconfig.json and fail.
+      const result = await runCli(
+        [
+          "base",
+          "head",
+          "-C",
+          repo,
+          "--config",
+          "tsconfig.json",
+          "--format",
+          "json",
+        ],
+        join(repo, "src"),
+      );
+
+      expect(result.code).toBe(0);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        run: { analysisMode: "tsconfig" },
+      });
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "exits 2 when a relative --config does not resolve",
+    async () => {
+      const repo = await fixtureRepo("config-tsconfig");
+
+      const result = await runCli(
+        ["base", "head", "--config", "no-such-tsconfig.json"],
+        repo,
+      );
+
+      expect(result.code).toBe(2);
+      expect(result.stderr).toContain("omen:");
     },
     TIMEOUT_MS,
   );

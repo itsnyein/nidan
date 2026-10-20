@@ -26,38 +26,42 @@ const FORMATS: readonly OutputFormat[] = ["text", "json"];
 export function createProgram(
   onRun: (invocation: CliInvocation) => void,
 ): Command {
-  return new Command()
-    .name("omen")
-    .description(packageJson.description)
-    .version(packageJson.version)
-    .argument("<base>", "ref to compare from")
-    .argument("<head>", "ref to compare to")
-    .option(
-      "-C, --directory <path>",
-      "repository to analyze (default: current directory)",
-    )
-    .option("--config <path>", "explicit tsconfig.json or jsconfig.json")
-    .option(
-      "-f, --format <format>",
-      `output format: ${FORMATS.join(" | ")}`,
-      parseFormat,
-      "text",
-    )
-    .addHelpText(
-      "after",
-      [
-        "",
-        "Exit codes:",
-        "  0  the analysis ran (status ok or degraded)",
-        "  1  the analysis failed",
-        "  2  usage or input error",
-        "",
-        "The exit code never depends on how many usages were found.",
-      ].join("\n"),
-    )
-    .action((base: string, head: string, options: CliOptions) => {
-      onRun({ base, head, options });
-    });
+  return (
+    new Command()
+      .name("omen")
+      .description(packageJson.description)
+      .version(packageJson.version)
+      .argument("<base>", "ref to compare from")
+      .argument("<head>", "ref to compare to")
+      .option(
+        "-C, --directory <path>",
+        "repository to analyze (default: current directory)",
+      )
+      .option("--config <path>", "explicit tsconfig.json or jsconfig.json")
+      // Long form only. A short alias is cheap to add later and breaking to remove, so the
+      // single-letter namespace stays unspent until something justifies it.
+      .option(
+        "--format <format>",
+        `output format: ${FORMATS.join(" | ")}`,
+        parseFormat,
+        "text",
+      )
+      .addHelpText(
+        "after",
+        [
+          "",
+          "Exit codes:",
+          "  0  the analysis ran (status ok or degraded)",
+          "  1  the analysis failed",
+          "  2  usage or input error",
+          "",
+          "The exit code never depends on how many usages were found.",
+        ].join("\n"),
+      )
+      .action((base: string, head: string, options: CliOptions) => {
+        onRun({ base, head, options });
+      })
+  );
 }
 
 function parseFormat(value: string): OutputFormat {
