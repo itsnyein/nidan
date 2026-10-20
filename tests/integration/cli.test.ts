@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 
@@ -21,7 +22,13 @@ afterEach(async () => {
 beforeAll(async () => {
   // The CLI is tested as the artifact users actually run, not as imported modules: the
   // shebang, the bundle, and the exit code are all part of the contract.
-  await execFileAsync("pnpm", ["build"], { cwd: process.cwd() });
+  //
+  // tsup is invoked through Node rather than through `pnpm build`: on Windows `pnpm` is a
+  // .cmd shim, which `execFile` cannot resolve without a shell, and a shell is exactly
+  // what this project avoids spawning.
+  const require = createRequire(`${process.cwd()}/`);
+  const tsupBin = require.resolve("tsup/dist/cli-default.js");
+  await execFileAsync(process.execPath, [tsupBin], { cwd: process.cwd() });
 }, TIMEOUT_MS);
 
 interface RunResult {
