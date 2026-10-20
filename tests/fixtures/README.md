@@ -70,11 +70,15 @@ can be tightened deliberately.
 
 ## Cases
 
-| Case                                                       | Proves                                           |
-| ---------------------------------------------------------- | ------------------------------------------------ |
-| [`overlay-basic`](overlay-basic/README.md)                 | Each snapshot is served from its own Git objects |
-| [`leak-working-tree`](leak-working-tree/README.md)         | The working tree never reaches results           |
-| [`config-tsconfig`](config-tsconfig/README.md)             | A real `tsconfig.json` is discovered and used    |
-| [`config-jsconfig-paths`](config-jsconfig-paths/README.md) | `jsconfig.json` `paths` aliases resolve          |
-| [`config-absent`](config-absent/README.md)                 | A missing config degrades the run, and says why  |
-| [`manifest-changed`](manifest-changed/README.md)           | A dependency change warns without degrading      |
+| Case                                                       | Proves                                                 |
+| ---------------------------------------------------------- | ------------------------------------------------------ |
+| [`overlay-basic`](overlay-basic/README.md)                 | Each snapshot is served from its own Git objects       |
+| [`leak-working-tree`](leak-working-tree/README.md)         | The working tree never reaches results                 |
+| [`config-tsconfig`](config-tsconfig/README.md)             | A real `tsconfig.json` is discovered and used          |
+| [`config-jsconfig-paths`](config-jsconfig-paths/README.md) | `jsconfig.json` `paths` aliases resolve                |
+| [`config-absent`](config-absent/README.md)                 | A missing config degrades the run, and says why        |
+| [`manifest-changed`](manifest-changed/README.md)           | A dependency change warns without degrading            |
+| [`layout-npm`](layout-npm/README.md)                       | Types resolve under a flat npm layout                  |
+| [`layout-yarn`](layout-yarn/README.md)                     | Types resolve with a nested transitive dependency      |
+| [`layout-pnpm`](layout-pnpm/README.md)                     | Types resolve through pnpm's symlinked layout          |
+| [`leak-uncommitted`](leak-uncommitted/README.md)           | A self-contained proof that the work tree is invisible |
