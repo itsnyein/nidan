@@ -1,15 +1,8 @@
-import { realpathSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
-
 import { ts } from "ts-morph";
 
-import {
-  findMergeBase,
-  findRepositoryRoot,
-  resolveCommit,
-} from "./git/refs.js";
+import { findMergeBase, resolveCommit } from "./git/refs.js";
 import { COVERAGE_STATEMENT, SCHEMA_VERSION, type Report } from "./model.js";
-import { toPosixPath } from "./project/paths.js";
+import { locateProject } from "./project/locate.js";
 import { loadSnapshotPair } from "./project/program.js";
 
 export type OutputFormat = "text" | "json";
@@ -37,13 +30,15 @@ export interface AnalyzeOptions {
  * library that terminates its caller is not reusable. The CLI owns both.
  */
 export async function analyze(options: AnalyzeOptions): Promise<Report> {
-  // `directory` is where omen behaves as though it were started. Everything relative —
-  // including `--config` — is resolved against it, so moving the invocation without
-  // moving the paths cannot silently change which files are read.
-  const projectDirectory = canonicalDirectory(
-    resolve(process.cwd(), options.directory ?? "."),
-  );
-  const repoRoot = await findRepositoryRoot(projectDirectory);
+  // Canonical paths come from one place; see src/project/locate.ts for why.
+  const location = await locateProject({
+    cwd: process.cwd(),
+    ...(options.directory === undefined
+      ? {}
+      : { directory: options.directory }),
+    ...(options.config === undefined ? {} : { config: options.config }),
+  });
+  const repoRoot = location.repoRoot;
 
   const baseCommit = await resolveCommit(repoRoot, options.base);
   const headCommit = await resolveCommit(repoRoot, options.head);
@@ -55,15 +50,9 @@ export async function analyze(options: AnalyzeOptions): Promise<Report> {
     repoRoot,
     baseSha: mergeBaseSha,
     headSha: headCommit,
-    ...(options.config === undefined
+    ...(location.configPath === undefined
       ? {}
-      : {
-          configPath: toPosixPath(
-            isAbsolute(options.config)
-              ? options.config
-              : resolve(projectDirectory, options.config),
-          ),
-        }),
+      : { configPath: location.configPath }),
   });
 
   return {
@@ -95,21 +84,6 @@ export async function analyze(options: AnalyzeOptions): Promise<Report> {
     seeds: [],
     repoWideGaps: [],
   };
-}
-
-/**
- * Resolves symlinks in the project directory so paths derived from it line up with the
- * repository root, which Git reports with symlinks already resolved. Without this, a
- * relative `--config` under a symlinked path would look like it sits outside the
- * repository.
- */
-function canonicalDirectory(path: string): string {
-  try {
-    return realpathSync.native(path);
-  } catch {
-    // Let the repository lookup produce the error; it has better context.
-    return path;
-  }
 }
 
 export type { Report } from "./model.js";
