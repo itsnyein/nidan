@@ -1,0 +1,12 @@
+{
+  "links": [
+    {
+      "path": "node_modules/tiny-ui",
+      "target": "node_modules/.pnpm/tiny-ui@1.0.0/node_modules/tiny-ui"
+    },
+    {
+      "path": "node_modules/.pnpm/tiny-ui@1.0.0/node_modules/tiny-dep",
+      "target": "node_modules/.pnpm/tiny-dep@1.0.0/node_modules/tiny-dep"
+    }
+  ]
+}

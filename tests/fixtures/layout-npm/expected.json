@@ -1,0 +1,27 @@
+{
+  "description": "Dependency types resolve under a npm node_modules layout, so the JSX usage of the changed component is found and no module is unresolved.",
+  "expect": {
+    "run": {
+      "status": "ok",
+      "analysisMode": "tsconfig",
+      "reasons": []
+    },
+    "seeds": [
+      {
+        "key": "src/card.tsx :: :: function :: Card",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "jsx-render",
+            "resolution": { "status": "exact" },
+            "from": "src/app.tsx :: :: function :: App",
+            "site": { "file": "src/app.tsx", "line": 4 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": []
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "layout-fixture",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "tiny-ui": "1.0.0"
+  }
+}

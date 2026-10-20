@@ -23,5 +23,10 @@
     "tsup.config.ts",
     "vitest.config.ts"
   ],
-  "exclude": ["tests/fixtures/*/base", "tests/fixtures/*/head"]
+  "exclude": [
+    "tests/fixtures/*/base",
+    "tests/fixtures/*/head",
+    "tests/fixtures/*/worktree",
+    "tests/fixtures/*/node_modules"
+  ]
 }

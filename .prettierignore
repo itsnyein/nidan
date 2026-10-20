@@ -8,3 +8,5 @@ coverage/
 # silently rewrite the behavior under test. The case README files are still formatted.
 tests/fixtures/*/base/
 tests/fixtures/*/head/
+tests/fixtures/*/worktree/
+tests/fixtures/*/node_modules/

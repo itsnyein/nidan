@@ -13,6 +13,8 @@ export default tseslint.config(
       "node_modules/",
       "tests/fixtures/*/base/",
       "tests/fixtures/*/head/",
+      "tests/fixtures/*/worktree/",
+      "tests/fixtures/*/node_modules/",
     ],
   },
   js.configs.recommended,
