@@ -72,6 +72,14 @@ async function fileAt(
   return git(["show", `${ref}:${path}`], repoPath);
 }
 
+/** Author, committer, timestamps, and tree hash — everything a commit SHA covers. */
+async function commitMetadata(repoPath: string, ref: string): Promise<string> {
+  return git(
+    ["log", "--format=%an|%ae|%at|%cn|%ce|%ct|%T", "-1", ref],
+    repoPath,
+  );
+}
+
 describe("createFixtureRepo", () => {
   it("commits base/ at the base ref and head/ at the head ref", async () => {
     const caseDir = await writeCase({
@@ -187,6 +195,11 @@ describe("createFixtureRepo", () => {
     process.env["GIT_AUTHOR_DATE"] = "2024-06-01T12:00:00Z";
     try {
       const repo = await build(caseDir);
+      // Commit metadata is compared before the SHA so a failure names the field that
+      // leaked rather than only reporting two different hashes.
+      expect(await commitMetadata(repo.path, repo.headRef)).toBe(
+        await commitMetadata(expected.path, expected.headRef),
+      );
       expect(repo.baseSha).toBe(expected.baseSha);
       expect(repo.headSha).toBe(expected.headSha);
     } finally {
