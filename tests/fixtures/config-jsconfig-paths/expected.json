@@ -1,0 +1,27 @@
+{
+  "description": "jsconfig.json paths aliases resolve, so an @/ import produces a real usage and no unresolved-module gap.",
+  "expect": {
+    "run": {
+      "status": "ok",
+      "analysisMode": "jsconfig",
+      "reasons": []
+    },
+    "seeds": [
+      {
+        "key": "src/lib/slug.js :: :: function :: slugify",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/page.js :: :: function :: titleFor",
+            "site": { "file": "src/page.js", "line": 4 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": []
+  }
+}

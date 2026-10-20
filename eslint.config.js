@@ -3,7 +3,18 @@ import prettier from "eslint-config-prettier";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist/", "coverage/", "node_modules/"] },
+  {
+    // Fixture source is data, not code. Cases deliberately contain patterns omen must
+    // handle and lint would reject — an `any` receiver, an unused export, a dynamic
+    // require — and they are frozen, so they could not be fixed in place anyway.
+    ignores: [
+      "dist/",
+      "coverage/",
+      "node_modules/",
+      "tests/fixtures/*/base/",
+      "tests/fixtures/*/head/",
+    ],
+  },
   js.configs.recommended,
   {
     files: ["**/*.ts"],

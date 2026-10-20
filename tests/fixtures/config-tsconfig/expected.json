@@ -1,0 +1,27 @@
+{
+  "description": "A real tsconfig.json is discovered in the snapshot and used, so the run is ok with no inferred-config reason.",
+  "expect": {
+    "run": {
+      "status": "ok",
+      "analysisMode": "tsconfig",
+      "reasons": []
+    },
+    "seeds": [
+      {
+        "key": "src/greet.ts :: :: function :: greet",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/index.ts :: module",
+            "site": { "file": "src/index.ts", "line": 3 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": []
+  }
+}

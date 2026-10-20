@@ -1,0 +1,8 @@
+{
+  "name": "manifest-changed-fixture",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "left-pad": "1.3.0"
+  }
+}

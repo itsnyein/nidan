@@ -1,0 +1,26 @@
+{
+  "description": "Results describe head, not the working tree: an uncommitted edit and an untracked file are both invisible.",
+  "expect": {
+    "run": {
+      "status": "ok",
+      "analysisMode": "tsconfig"
+    },
+    "seeds": [
+      {
+        "key": "src/calc.ts :: :: function :: total",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/report.ts :: :: function :: summary",
+            "site": { "file": "src/report.ts", "line": 4 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": []
+  }
+}
