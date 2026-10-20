@@ -120,6 +120,29 @@ describe("createFixtureRepo", () => {
   );
 
   it(
+    "re-hashes a file whose length did not change between snapshots",
+    async () => {
+      // The trigger shape for Git's racy index: identical size, rewritten within the
+      // filesystem's mtime granularity. If the index is trusted instead of the content,
+      // the head commit silently keeps the base blob.
+      const caseDir = await writeCase({
+        base: { "a.ts": "export const a = 1;\n" },
+        head: { "a.ts": "export const a = 2;\n" },
+      });
+
+      const repo = await build(caseDir);
+
+      expect(await fileAt(repo.path, repo.headRef, "a.ts")).toBe(
+        "export const a = 2;",
+      );
+      expect(await treeAt(repo.path, repo.headRef)).not.toBe(
+        await treeAt(repo.path, repo.baseRef),
+      );
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
     "deletes a file that base has and head does not",
     async () => {
       const caseDir = await writeCase({

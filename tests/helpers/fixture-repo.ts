@@ -173,6 +173,13 @@ async function commitAll(
   env: NodeJS.ProcessEnv,
   message: string,
 ): Promise<string> {
+  // Emptying the index first forces every file to be hashed from its contents. Without
+  // this, `git add` trusts the stat data cached from the previous commit and skips files
+  // whose size is unchanged and whose mtime falls inside the filesystem's granularity --
+  // Git's "racy index" problem. A fixture that edits a file without changing its length
+  // would then silently commit the previous snapshot's content. It reproduces on Windows,
+  // whose mtime resolution is coarsest, and is why fixture SHAs were nondeterministic.
+  await git(["read-tree", "--empty"], repoPath, env);
   await git(["add", "--all"], repoPath, env);
   // --allow-empty keeps a case whose base and head are identical from failing here; that
   // is a legitimate fixture (a change that must produce no seed).
