@@ -1,3 +1,4 @@
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -9,8 +10,9 @@ import { loadSnapshotPair } from "../../../src/project/program.js";
 import {
   expectGapsEqual,
   expectGapsMatchFixture,
-  fixturesWithRecordedGaps,
+  allFixtures,
   parseRecordedGaps,
+  recordedGaps as readRecordedGaps,
   type RecordedGap,
 } from "../../helpers/fixture-gaps.js";
 import { createFixtureRepo } from "../../helpers/fixture-repo.js";
@@ -40,13 +42,25 @@ afterEach(async () => {
  * would break on any refactor that moved a name. Asserting them directly makes the
  * property true by construction.
  */
-describe("every fixture with recorded gaps is asserted", () => {
-  const names = fixturesWithRecordedGaps();
+describe("every fixture is asserted against its record", () => {
+  const names = allFixtures();
 
-  it("finds the fixtures that record gaps", () => {
-    // Guards the enumeration itself. If a path change made this return nothing, the
-    // `it.each` below would silently run zero cases and the suite would stay green while
-    // asserting nothing at all.
+  it("enumerates every fixture directory holding an expected.json", () => {
+    // Guards the enumeration against *shrinking*, not merely against emptying. An earlier
+    // version checked only `length > 0`, which catches zero fixtures but not "one fewer" —
+    // and the enumeration keyed on record content, so a record emptying itself dropped
+    // out of the list and took its own assertion with it.
+    const directories = readdirSync(join("tests", "fixtures"), {
+      withFileTypes: true,
+    })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .filter((name) =>
+        existsSync(join("tests", "fixtures", name, "expected.json")),
+      )
+      .sort();
+
+    expect(names).toEqual(directories);
     expect(names.length).toBeGreaterThan(0);
   });
 
@@ -106,10 +120,28 @@ describe("the gap comparison is a multiset", () => {
     }).not.toThrow();
   });
 
-  it("fails when a field differs but the count matches", () => {
-    // A length-only comparison would pass this.
+  it.each([
+    ["kind", { kind: "ambiguous-identity" }],
+    ["snapshot", { snapshot: "base" }],
+    ["file", { file: "src/other.ts" }],
+    ["reasonCode", { reasonCode: "duplicate-structural-key" }],
+  ])("fails when only %s differs and the count matches", (_field, override) => {
+    // One case per compared field. Varying a single field left the other three
+    // undefended: dropping `kind`, `snapshot`, or `file` from the rendered string each
+    // passed the whole suite, so three of the four were compared by nothing.
     expect(() => {
-      expectGapsEqual([gap("duplicate-structural-key")], [gap()], "field");
+      expectGapsEqual([{ ...gap(), ...override }], [gap()], "field");
+    }).toThrow();
+  });
+
+  it("does not confuse field boundaries when a value contains a space", () => {
+    // A space-joined rendering made these two compare equal.
+    expect(() => {
+      expectGapsEqual(
+        [{ ...gap(), file: "src/a b.ts", reasonCode: "x" }],
+        [{ ...gap(), file: "src/a", reasonCode: "b.ts x" }],
+        "boundary",
+      );
     }).toThrow();
   });
 });
@@ -142,6 +174,34 @@ describe("recorded gaps must state every field", () => {
     expect(() => {
       parseRecordedGaps([{ ...complete, kind: undefined }], "some-fixture");
     }).toThrow(/some-fixture: repoWideGaps\[0\]/);
+  });
+
+  it.each([
+    ["null", null],
+    ["a number", 1],
+    ["an object", {}],
+  ])("a %s field is a test error, not a value", (_label, value) => {
+    // `required` rejected only `undefined`, so a record carrying null or a number passed
+    // validation and then merely *differed*, reporting a mismatch rather than a broken
+    // record.
+    expect(() => {
+      // Cast through `unknown`: the point is a record whose field is *not* a string,
+      // which the declared parameter type forbids by construction. A malformed JSON file
+      // can carry exactly this, so the runtime check has to exist regardless.
+      parseRecordedGaps(
+        [{ ...complete, kind: value }] as unknown as Parameters<
+          typeof parseRecordedGaps
+        >[0],
+        "synthetic",
+      );
+    }).toThrow(/kind/);
+  });
+
+  it("rejects a record with no repoWideGaps array", () => {
+    // An absent key must not read as "expects no gaps".
+    expect(() => {
+      readRecordedGaps("__does_not_exist__");
+    }).toThrow();
   });
 
   it("accepts a complete record", () => {

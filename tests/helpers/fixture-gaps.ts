@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { expect } from "vitest";
@@ -20,12 +20,22 @@ export interface RecordedGap {
   readonly reasonCode: string;
 }
 
-/** Fixture directory names whose `expected.json` records at least one gap. */
-export function fixturesWithRecordedGaps(): string[] {
+/**
+ * Every fixture directory holding an `expected.json`.
+ *
+ * Keyed on the **fixture set**, never on record content. An earlier version enumerated
+ * only fixtures whose record held at least one gap, which meant a record that emptied
+ * itself deleted its own assertion: setting `repoWideGaps: []` on a fixture whose code
+ * emits a gap dropped it from the list and left the suite green. A check that disappears
+ * when the thing it checks changes is not a check.
+ */
+export function allFixtures(): string[] {
   return readdirSync(join("tests", "fixtures"), { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
-    .filter((name) => recordedGaps(name).length > 0)
+    .filter((name) =>
+      existsSync(join("tests", "fixtures", name, "expected.json")),
+    )
     .sort();
 }
 
@@ -99,7 +109,19 @@ export function recordedGaps(name: string): RecordedGap[] {
     };
   };
 
-  return parseRecordedGaps(parsed.expect?.repoWideGaps ?? [], name);
+  // An absent `expect` or `repoWideGaps` is a malformed record, not an assertion that
+  // there are no gaps. Defaulting to `[]` would let a misspelled key read as "expects
+  // nothing" — a record that asserts nothing while looking like one that does.
+  if (parsed.expect === undefined) {
+    throw new Error(`${name}: expected.json has no "expect" object.`);
+  }
+  if (parsed.expect.repoWideGaps === undefined) {
+    throw new Error(
+      `${name}: expected.json has no "repoWideGaps" array. Record [] explicitly to ` +
+        `assert that the fixture produces no gaps.`,
+    );
+  }
+  return parseRecordedGaps(parsed.expect.repoWideGaps, name);
 }
 
 /**
@@ -130,14 +152,17 @@ export function parseRecordedGaps(
 }
 
 function required(
-  value: string | undefined,
+  value: unknown,
   name: string,
   index: number,
   field: string,
 ): string {
-  if (value === undefined) {
+  // `typeof`, not `!== undefined`: a record carrying null, a number, or an object for a
+  // field is malformed, and letting it through would compare a non-string against a
+  // string and simply differ, reporting a mismatch rather than a broken record.
+  if (typeof value !== "string") {
     throw new Error(
-      `${name}: repoWideGaps[${String(index)}] is missing "${field}". ` +
+      `${name}: repoWideGaps[${String(index)}] has no string "${field}". ` +
         `Recorded gaps must state every field; a default would make the record less ` +
         `strict than it looks.`,
     );
@@ -147,5 +172,8 @@ function required(
 
 /** One comparable line per gap, so a mismatch reads as a diff rather than object soup. */
 function render(gap: RecordedGap): string {
-  return `${gap.kind} ${gap.snapshot} ${gap.file} ${gap.reasonCode}`;
+  // NUL separator, which no field can contain. A space would make
+  // `{file: "src/a b.ts", reasonCode: "x"}` compare equal to
+  // `{file: "src/a", reasonCode: "b.ts x"}` — a boundary a path with a space can cross.
+  return [gap.kind, gap.snapshot, gap.file, gap.reasonCode].join("\u0000");
 }
