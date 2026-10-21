@@ -162,7 +162,7 @@ export function mapSeeds(input: MapSeedsInput): SeedResult {
     // another below it — and a single gap names only one of them, leaving the other
     // changed but unreported. That is the same silent miss this task exists to close,
     // surviving at a finer grain than the hunk.
-    for (const run of uncoveredRuns(uncovered)) {
+    for (const run of uncoveredRuns(attribution, uncovered)) {
       gaps.push(unmappedGap(attribution, run));
     }
   }
@@ -489,23 +489,46 @@ function dedupeCollisions(gaps: readonly SeedGap[]): SeedGap[] {
   return unique;
 }
 
-function uncoveredRuns(uncovered: readonly CoveredLine[]): CoveredLine[][] {
-  // Grouped per snapshot as well as per run. Preferring one side discards real changes:
-  // a statement deleted beside a modified callable has uncovered **base** lines and no
-  // head counterpart, so a head-only gap names nothing for it (§8.2 as ruled
-  // 2026-10-21). The hunk is still counted once; these gaps describe it, they are not
-  // additional hunks.
-  const bySnapshot = new Map<Snapshot, CoveredLine[]>();
-  for (const line of uncovered) {
-    bySnapshot.set(line.snapshot, [
-      ...(bySnapshot.get(line.snapshot) ?? []),
-      line,
-    ]);
-  }
+function uncoveredRuns(
+  attribution: Attribution,
+  uncovered: readonly CoveredLine[],
+): CoveredLine[][] {
+  if (uncovered.length === 0) return [];
 
+  // §8.2 as ruled 2026-10-21: report every head-side uncovered run, plus every base-side
+  // run that **no head-side gap accounts for**.
+  //
+  // A base line is accounted for only when it is the *replaced counterpart* of an
+  // uncovered head line: Git lists a hunk's two sides in parallel, so the base line at
+  // offset `n` was replaced by the head line at offset `n`. If that counterpart is itself
+  // uncovered, the head gap already names the edit and a base gap would name it twice.
+  //
+  // A base line with no counterpart — offset beyond the head range, i.e. deleted text —
+  // is never accounted for by a head gap, because there is no head line to carry it.
+  // Those always get a base-side gap; skipping them is how a statement deleted beside a
+  // modified callable came to be reported by nothing at all.
+  const uncoveredHeadLines = new Set(
+    uncovered
+      .filter((line) => line.snapshot === "head")
+      .map((line) => line.line),
+  );
+
+  const reported = uncovered.filter((line) => {
+    if (line.snapshot === "head") return true;
+    const offset = line.line - attribution.hunk.base.start;
+    const hasCounterpart = offset >= 0 && offset < attribution.hunk.head.count;
+    if (!hasCounterpart) return true;
+    return !uncoveredHeadLines.has(attribution.hunk.head.start + offset);
+  });
+
+  // Runs rather than one gap per hunk: a hunk can leave two separate regions unaccounted
+  // for, and a single gap names only the first. Grouped per snapshot, since a base run
+  // and a head run are different reports.
   const runs: CoveredLine[][] = [];
-  for (const lines of bySnapshot.values()) {
-    const ordered = [...lines].sort((left, right) => left.line - right.line);
+  for (const snapshot of ["base", "head"] as const) {
+    const ordered = reported
+      .filter((line) => line.snapshot === snapshot)
+      .sort((left, right) => left.line - right.line);
     let current: CoveredLine[] | undefined;
     for (const line of ordered) {
       if (

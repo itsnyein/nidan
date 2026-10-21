@@ -189,32 +189,19 @@ describe("a hunk that changes a callable and text outside it", () => {
       expect(actualSeeds(outcome.result)).toEqual(
         expectedSeeds("seed-mixed-hunk"),
       );
-      // Two gaps, one per snapshot: `LIMIT` is uncovered on both sides, and each side's
-      // run is named on its own snapshot (§8.2 as ruled 2026-10-21). Before that ruling
-      // the base side was discarded, so a statement deleted beside a modified callable
-      // was named by nothing at all.
-      const unmapped = outcome.result.gaps
-        .filter((gap) => gap.kind === "unmapped-change")
-        .map((gap) => ({
-          snapshot: gap.snapshot,
-          line: "line" in gap ? gap.line : 0,
-          filePath: gap.filePath,
-          reasonCode: gap.reasonCode,
-        }));
-      expect(unmapped).toEqual([
-        {
-          snapshot: "base",
-          line: 1,
-          filePath: "src/calc.ts",
-          reasonCode: "no-enclosing-callable",
-        },
-        {
-          snapshot: "head",
-          line: 1,
-          filePath: "src/calc.ts",
-          reasonCode: "no-enclosing-callable",
-        },
-      ]);
+      // One gap. `LIMIT` is uncovered on both sides, but the base line is the replaced
+      // counterpart of the uncovered head line, so the head gap already names the edit
+      // (§8.2 as ruled 2026-10-21). A base gap would name the same edit twice.
+      const unmapped = outcome.result.gaps.filter(
+        (gap) => gap.kind === "unmapped-change",
+      );
+      expect(unmapped).toHaveLength(1);
+      expect(unmapped[0]).toMatchObject({
+        filePath: "src/calc.ts",
+        reasonCode: "no-enclosing-callable",
+        snapshot: "head",
+        line: 1,
+      });
       // Counted once: the gap is extra information about the hunk, not a second hunk.
       expect(outcome.result.accounting).toMatchObject({
         totalHunks: 1,

@@ -68,6 +68,22 @@ export function expectEveryChangedLineAccounted(
     // uncovered. No cross-snapshot fallback: every uncovered run is reported on its own
     // side (§8.2 as ruled 2026-10-21), and accepting a gap from the other side was how
     // round 1's condemned file-level check crept back in as a disjunct.
+    // A base line may be answered by the **head** gap for the same edit: the base line at
+    // offset n was replaced by the head line at offset n, so when that counterpart is
+    // itself uncovered the head gap names the edit and a base gap would duplicate it
+    // (§8.2 as ruled 2026-10-21).
+    //
+    // This is deliberately narrow. An earlier version accepted *any* gap elsewhere in the
+    // file, which is the file-level check round 1 condemned — it excused lines nothing
+    // named. Here the specific counterpart line must itself be uncovered, so a base line
+    // with no counterpart (deleted text) is never excused.
+    if (
+      line.snapshot === "base" &&
+      hasUncoveredCounterpart(line, diff, uncoveredKeys)
+    ) {
+      continue;
+    }
+
     const sameSide = gapsByFile.get(`${line.snapshot}:${line.filePath}`) ?? [];
     const answered = sameSide.some((start) => {
       if (start > line.line) return false;
@@ -259,4 +275,29 @@ function innermostOwnersOfChangedLines(
     }
   }
   return [...owners];
+}
+
+/**
+ * Whether a base-side uncovered line was replaced by an uncovered head line.
+ *
+ * Derived from the **diff**, not from anything `mapSeeds` reported, so it is an
+ * independent account of which lines correspond.
+ */
+function hasUncoveredCounterpart(
+  line: { snapshot: string; filePath: string; line: number },
+  diff: DiffResult,
+  uncoveredKeys: ReadonlySet<string>,
+): boolean {
+  for (const file of diff.files) {
+    if (file.path !== line.filePath) continue;
+    for (const hunk of file.hunks) {
+      const offset = line.line - hunk.base.start;
+      if (offset < 0 || offset >= hunk.base.count) continue;
+      if (offset >= hunk.head.count) return false;
+      return uncoveredKeys.has(
+        `head:${file.path}:${String(hunk.head.start + offset)}`,
+      );
+    }
+  }
+  return false;
 }

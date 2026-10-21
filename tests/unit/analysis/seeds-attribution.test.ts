@@ -180,6 +180,51 @@ describe("the boundary rule, isolated from the formatting guard", () => {
   );
 });
 
+describe("a statement deleted beside a modified callable", () => {
+  it(
+    "reports the deletion on the base side, not only the head edit",
+    async () => {
+      // The case that forced the one-gap-per-edit rule to be refined. `A` is modified and
+      // `B` is deleted, adjacent to a changed function, so Git emits one hunk
+      // (`@@ -1,3 +1,2 @@`, asserted below).
+      //
+      // `A`'s base line is the replaced counterpart of an uncovered head line, so the
+      // head gap names it and a base gap would duplicate it. `B`'s base line has **no**
+      // counterpart — the head range is shorter — so nothing on the head side can carry
+      // it. Reporting head-side runs only, as the first wording of the rule said, left
+      // the deletion named by nothing at all.
+      const base = [
+        "export const A = 1;",
+        "export const B = 2;",
+        "export function f(): number { return 1; }",
+        "",
+      ].join("\n");
+      const head = [
+        "export const A = 9;",
+        "export function f(): number { return 2; }",
+        "",
+      ].join("\n");
+      const outcome = await run({
+        base: { "src/a.ts": base },
+        head: { "src/a.ts": head },
+      });
+
+      expect(outcome.hunksInDiff).toBe(1);
+      expect(seedKeys(outcome.result)).toEqual([
+        "src/a.ts :: :: function :: f modified",
+      ]);
+
+      const unmapped = outcome.result.gaps
+        .filter((gap) => gap.kind === "unmapped-change")
+        .map((gap) => `${gap.snapshot}:${String("line" in gap ? gap.line : 0)}`)
+        .sort();
+      // head:1 names A's edit; base:2 names B's deletion, which has no head counterpart.
+      expect(unmapped).toEqual(["base:2", "head:1"]);
+    },
+    TIMEOUT_MS,
+  );
+});
+
 describe("a hunk with two separate uncovered regions", () => {
   it(
     "reports a gap for each region, not just the first",
@@ -221,10 +266,10 @@ describe("a hunk with two separate uncovered regions", () => {
         .filter((gap) => gap.kind === "unmapped-change")
         .map((gap) => `${gap.snapshot}:${String(gap.line)}`)
         .sort();
-      // Both sides, per the 2026-10-21 ruling: the base side's uncovered lines are a
-      // real deletion of text and are named on their own snapshot, not represented by
-      // the head gap.
-      expect(unmapped).toEqual(["base:1", "base:3", "head:1", "head:3"]);
+      // One gap per edit: each base line here is the replaced counterpart of an
+      // uncovered head line, so the head gaps already name both edits and base gaps
+      // would name them twice.
+      expect(unmapped).toEqual(["head:1", "head:3"]);
       // Counted once, as seed-consumed: two gaps about one hunk are not two hunks.
       expect(outcome.result.accounting).toMatchObject({
         totalHunks: 1,
@@ -918,10 +963,8 @@ describe("hunks with nothing to attribute to", () => {
       });
 
       expect(outcome.result.seeds).toEqual([]);
-      // One per side: the modified line is uncovered in both snapshots, and each side's
-      // uncovered run is named on its own snapshot (§8.2 as ruled 2026-10-21).
+      // One gap: the base line is the replaced counterpart of the uncovered head line.
       expect(outcome.result.gaps.map((gap) => gap.kind)).toEqual([
-        "unmapped-change",
         "unmapped-change",
       ]);
       expectAccountsForEveryHunk(outcome);
