@@ -48,7 +48,11 @@ async function seedOutcome(name: string): Promise<Outcome> {
 
   // Asserted here rather than in each test, so **every** fixture the suite exercises is
   // held to the line-level invariant — including ones added later, whose authors need not
-  // remember to ask for it.
+  // remember to ask.
+  //
+  // Gap records are **not** asserted here. `fixture-gap-coverage.test.ts` enumerates every
+  // fixture directory and asserts all of them, so a second call would be redundant: its
+  // removal changed no outcome, which is the definition of a check that is not checking.
   expectEveryChangedLineAccounted(result, diff, head);
 
   return {
