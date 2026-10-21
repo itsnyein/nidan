@@ -219,6 +219,30 @@ describe("a hunk that changes a callable and text outside it", () => {
   );
 });
 
+describe("a hunk covered by an ambiguous-identity gap", () => {
+  it(
+    "is counted in its own bucket, not as formatting-filtered",
+    async () => {
+      // The change inside the colliding `handle` is substantive, and it *is* reported —
+      // by the `ambiguous-identity` gap. Counting it as formatting-filtered contradicted
+      // that bucket's own meaning, "deliberately not a seed and not a gap", and described
+      // substantive text as filtered formatting. Nothing was lost; the summary misled.
+      const outcome = await seedOutcome("identity-collision");
+
+      expect(outcome.result.accounting).toMatchObject({
+        seedConsumed: 0,
+        formattingFiltered: 0,
+        ambiguousCovered: 1,
+        gapOnly: 0,
+      });
+      expect(
+        outcome.result.gaps.filter((gap) => gap.kind === "ambiguous-identity"),
+      ).toHaveLength(1);
+    },
+    TIMEOUT_MS,
+  );
+});
+
 describe("boundary insertions and deletions", () => {
   // §8.2 as amended 2026-10-21: a zero-count range is a position *between* two lines. It
   // belongs to a callable only when both adjacent lines lie inside that same callable;
@@ -356,17 +380,22 @@ describe("hunk accounting", () => {
     "%s accounts for every hunk in the diff",
     async (name) => {
       const outcome = await seedOutcome(name);
-      const { totalHunks, seedConsumed, formattingFiltered, gapOnly } =
-        outcome.result.accounting;
+      const {
+        totalHunks,
+        seedConsumed,
+        formattingFiltered,
+        ambiguousCovered,
+        gapOnly,
+      } = outcome.result.accounting;
 
       // Compared against the diff, not against the mapper's own counter. Both buckets
       // and `totalHunks` derive from the same array inside the mapper, so checking one
       // against the other can never fail — and would not notice a hunk the mapper never
       // attributed at all.
       expect(totalHunks).toBe(outcome.hunksInDiff);
-      expect(seedConsumed + formattingFiltered + gapOnly).toBe(
-        outcome.hunksInDiff,
-      );
+      expect(
+        seedConsumed + formattingFiltered + ambiguousCovered + gapOnly,
+      ).toBe(outcome.hunksInDiff);
       expect(outcome.hunksInDiff).toBeGreaterThan(0);
     },
     TIMEOUT_MS,

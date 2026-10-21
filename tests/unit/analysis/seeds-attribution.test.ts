@@ -6,7 +6,12 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { diffCommits } from "../../../src/analysis/diff.js";
 import { enumerateCallables } from "../../../src/analysis/identity.js";
-import { mapSeeds, type SeedResult } from "../../../src/analysis/seeds.js";
+import {
+  compareGaps,
+  mapSeeds,
+  type SeedGap,
+  type SeedResult,
+} from "../../../src/analysis/seeds.js";
 import { loadSnapshotPair } from "../../../src/project/program.js";
 import { createFixtureRepo } from "../../helpers/fixture-repo.js";
 import { expectEveryChangedLineAccounted } from "../../helpers/line-coverage.js";
@@ -107,11 +112,18 @@ function seedKeys(result: SeedResult): string[] {
  * tautological: both derive from the same array.
  */
 function expectAccountsForEveryHunk(outcome: Outcome): void {
-  const { seedConsumed, formattingFiltered, gapOnly, totalHunks } =
-    outcome.result.accounting;
+  const {
+    seedConsumed,
+    formattingFiltered,
+    ambiguousCovered,
+    gapOnly,
+    totalHunks,
+  } = outcome.result.accounting;
 
   expect(totalHunks).toBe(outcome.hunksInDiff);
-  expect(seedConsumed + formattingFiltered + gapOnly).toBe(outcome.hunksInDiff);
+  expect(seedConsumed + formattingFiltered + ambiguousCovered + gapOnly).toBe(
+    outcome.hunksInDiff,
+  );
   expect(outcome.hunksInDiff).toBeGreaterThan(0);
 }
 
@@ -175,6 +187,92 @@ describe("the boundary rule, isolated from the formatting guard", () => {
         gapOnly: 1,
       });
       expectAccountsForEveryHunk(outcome);
+    },
+    TIMEOUT_MS,
+  );
+});
+
+describe("compareGaps obeys a total order", () => {
+  // Asserted on the comparator itself, not on sorted output. Sorting cannot tell a
+  // correct comparator from an inconsistent one that the engine's stable sort happens to
+  // order identically — reverting this fix left an output-only test green.
+  const gap = (
+    over: Partial<{
+      filePath: string;
+      snapshot: "base" | "head";
+      line: number;
+    }> = {},
+  ): SeedGap => ({
+    kind: "unmapped-change",
+    snapshot: over.snapshot ?? "head",
+    filePath: over.filePath ?? "src/a.ts",
+    line: over.line ?? 5,
+    reasonCode: "no-enclosing-callable",
+  });
+
+  it("returns 0 for equal gaps", () => {
+    expect(compareGaps(gap(), gap())).toBe(0);
+  });
+
+  it.each([
+    ["snapshot", gap({ snapshot: "base" }), gap({ snapshot: "head" })],
+    ["file", gap({ filePath: "src/a.ts" }), gap({ filePath: "src/b.ts" })],
+    ["line", gap({ line: 1 }), gap({ line: 5 })],
+  ])("is antisymmetric on %s", (_field, left, right) => {
+    // The defect: the old comparator returned 1 for *both* orderings of a full tie, so
+    // the language left the sort order unspecified.
+    expect(compareGaps(left, right)).toBe(-compareGaps(right, left));
+    expect(compareGaps(left, right)).toBeLessThan(0);
+  });
+
+  it("breaks a file/line/kind tie on snapshot", () => {
+    // The reachable tie: a base-side and a head-side gap at the same line.
+    expect(
+      compareGaps(gap({ snapshot: "base" }), gap({ snapshot: "head" })),
+    ).toBeLessThan(0);
+  });
+});
+
+describe("gap ordering is a total order", () => {
+  it(
+    "orders two gaps that tie on file, line and kind by snapshot",
+    async () => {
+      // The reviewer's construction: it produces gaps at base line 2, base line 5 and
+      // head line 5 — the last two tying on (file, line, kind). The old comparator never
+      // returned 0 and broke that tie as `left.kind < right.kind ? -1 : 1`, returning 1
+      // for *both* orderings. An inconsistent comparator leaves sort order unspecified by
+      // the language, so determinism rested on the engine's sort rather than on omen —
+      // a latent cross-version risk for M5's byte-identical-JSON criterion.
+      const base = Array.from(
+        { length: 8 },
+        (_unused, index) =>
+          `export const C${String(index + 1)} = ${String(index + 1)};`,
+      ).join("\n");
+      const head = [
+        "export const C1 = 1;",
+        "export const C4 = 4;",
+        "export const C6 = 6;",
+        "export const C7 = 7;",
+        "export const INSERTED = 0;",
+        "export const C8 = 8;",
+      ].join("\n");
+      const outcome = await run({
+        base: { "src/a.ts": `${base}\n` },
+        head: { "src/a.ts": `${head}\n` },
+      });
+
+      const ordered = outcome.result.gaps.map(
+        (gap) =>
+          `${gap.snapshot}:${String("line" in gap ? gap.line : 0)}:${gap.kind}`,
+      );
+
+      // Deterministic and stable: sorting the reported order again changes nothing.
+      expect(ordered).toEqual([...ordered].sort());
+      // The tie is actually present, or this asserts nothing about tie-breaking.
+      const lines = outcome.result.gaps.map((gap) =>
+        "line" in gap ? gap.line : 0,
+      );
+      expect(new Set(lines).size).toBeLessThan(lines.length);
     },
     TIMEOUT_MS,
   );
