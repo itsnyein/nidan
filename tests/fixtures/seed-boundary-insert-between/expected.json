@@ -1,0 +1,15 @@
+{
+  "description": "A top-level statement inserted between two functions belongs to neither. The hunk is reported as an unmapped-change gap, never attributed to the unchanged neighbours.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [],
+    "repoWideGaps": [
+      {
+        "kind": "unmapped-change",
+        "snapshot": "head",
+        "site": { "file": "src/calc.ts" },
+        "reasonCode": "no-enclosing-callable"
+      }
+    ]
+  }
+}

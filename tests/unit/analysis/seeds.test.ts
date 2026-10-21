@@ -80,6 +80,12 @@ describe("classification against the frozen fixtures", () => {
     "identity-overload",
     "identity-re-export",
     "overlay-basic",
+    // The positive half of the boundary rule (§8.2 as amended): both lines adjacent to
+    // the zero-count range lie inside the same callable, so the insertion seeds it.
+    // These already hold on current main; the two between-function cases do not, and
+    // wait for T2.4 below.
+    "seed-boundary-insert-body-first",
+    "seed-boundary-insert-body-last",
   ])(
     "%s seeds exactly what the fixture expects",
     async (name) => {
@@ -149,6 +155,40 @@ describe("classification against the frozen fixtures", () => {
       expect(actualSeeds(result)).toEqual([
         ["src/format.ts :: :: function :: formatRow", "modified"],
       ]);
+    },
+    TIMEOUT_MS,
+  );
+});
+
+describe.skip("boundary insertions and deletions", () => {
+  // §8.2 as amended 2026-10-21: a zero-count range is a position *between* two lines. It
+  // belongs to a callable only when both adjacent lines lie inside that same callable;
+  // otherwise the hunk is an `unmapped-change` gap, never attributed to an unchanged
+  // neighbour.
+  //
+  // Skipped until T2.4 implements the rule. Observed on `1452f50`, both cases produce
+  // `seeds: [], gaps: [], formattingFiltered: 1` — the insertion is absorbed by the
+  // formatting bucket and vanishes from the report while the accounting balances. That
+  // is the defect; these assertions are its reproduction, so they are left failing-by-
+  // skip rather than weakened to match current behaviour.
+  it.each(["seed-boundary-insert-between", "seed-boundary-delete-between"])(
+    "%s reports an unmapped-change gap and seeds neither neighbour",
+    async (name) => {
+      const outcome = await seedOutcome(name);
+
+      expect(actualSeeds(outcome.result)).toEqual(expectedSeeds(name));
+      const unmapped = outcome.result.gaps.filter(
+        (gap) => gap.kind === "unmapped-change",
+      );
+      expect(unmapped).toHaveLength(1);
+      expect(unmapped[0]).toMatchObject({
+        filePath: "src/calc.ts",
+        reasonCode: "no-enclosing-callable",
+      });
+      // The guard that makes the miss impossible to hide: a hunk may only be counted as
+      // formatting-filtered when its own changed text is formatting-only.
+      expect(outcome.result.accounting.formattingFiltered).toBe(0);
+      expect(outcome.result.accounting.gapOnly).toBe(1);
     },
     TIMEOUT_MS,
   );
