@@ -172,6 +172,33 @@ Comment changes, including JSDoc and pragma comments, **do** count as a modifica
 - A change inside an **unsupported** callable, such as an anonymous callback, seeds the nearest enclosing supported callable.
 - A change inside a callable whose [identity is ambiguous](limitations.md#duplicate-identity-keys-stop-matching) does the same: that callable is skipped, attribution continues outward to the next enclosing supported callable, and the ambiguous-identity gap is reported as well. Seeding a callable omen cannot identify would attribute the change to one of two declarations arbitrarily.
 - A hunk that maps to no callable produces an `unmapped-change` gap. This covers top-level statements, type and interface declarations, getters and setters, and any code with no enclosing callable.
+- An **overload set** owns each declaration's own range, not the span from its first signature to its last. Ambient `declare function` overloads need not be contiguous, so a statement written between two signatures belongs to no callable and is reported as a gap.
+
+### Insertions, deletions, and where a change belongs
+
+A diff can describe a change as a _position between two lines_ rather than a span — that is how Git reports a pure insertion or deletion. omen reads such a position as belonging to a callable only when **both** adjacent lines lie inside that same callable.
+
+- A line inserted inside a function body belongs to that function, and seeds it.
+- A line inserted **between** two functions belongs to neither, and is reported as an `unmapped-change` gap. It is never attributed to an unchanged neighbour, which would report a function as changed when its own text did not change.
+
+### One change, one gap
+
+A single hunk can change a callable **and** text that belongs to no callable. omen reports both: the callable is seeded _and_ an `unmapped-change` gap names the uncovered lines. The hunk itself is counted once.
+
+Each contiguous run of uncovered lines gets its own gap, so a hunk leaving two separate regions unaccounted for produces two gaps rather than naming only the first.
+
+Gaps are reported against the snapshot that holds the text:
+
+- the **head** side for a change that exists there;
+- the **base** side for deleted text with no counterpart in head — a statement removed beside a modified function is named on its own side, because no head line carries it.
+
+A modification whose two sides describe the same edit is reported once, not twice.
+
+### Changing a shared declaration keyword
+
+`let a = () => 1, b = () => 2;` declares two callables in one statement. Changing the keyword — to `var`, or `const` — changes scoping and temporal-dead-zone semantics for **both**, so both are reported as modified, whichever line the diff happened to touch.
+
+Editing only one initializer still reports only that one.
 
 **No diff hunk is silently ignored.** Every hunk in a JavaScript or TypeScript file becomes a seed or a gap.
 
