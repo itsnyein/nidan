@@ -31,6 +31,14 @@ const NODE_MODULES_SEGMENT = "node_modules";
 /** Separates container names within the chain, for a callable nested more than once. */
 const CONTAINER_SEPARATOR = ".";
 
+/** One declaration's own extent, 1-based lines and character offsets. */
+export interface DeclarationRange {
+  readonly startLine: number;
+  readonly endLine: number;
+  readonly startPos: number;
+  readonly endPos: number;
+}
+
 export interface Callable {
   /** `relativePosixPath :: containerChain :: declarationKind :: name [:: static]` */
   readonly key: string;
@@ -53,6 +61,28 @@ export interface Callable {
    */
   readonly startPos: number;
   readonly endPos: number;
+  /**
+   * The extent of **each** declaration, separately.
+   *
+   * An overload set's `startLine`/`endLine` are the hull from its first signature to its
+   * last, which is right for *reporting* a seed but wrong for *ownership*: ambient
+   * `declare function` overloads need not be contiguous, so the hull can contain
+   * top-level statements that belong to no callable. Testing a line against each
+   * declaration's own range instead keeps those lines unowned, so they are reported as
+   * gaps rather than filtered as formatting inside an unchanged callable (§7.2 as
+   * amended 2026-10-21).
+   */
+  readonly ranges: readonly DeclarationRange[];
+  /**
+   * The tokens this declarator shares with its siblings — the declaration keyword and
+   * statement modifiers — or `""` when it shares none.
+   *
+   * Reported so a change to them can seed **every** declarator the statement declares,
+   * not only the one whose line the diff touched (§8.2 as amended 2026-10-22).
+   */
+  readonly sharedTokens: string;
+  /** Identifies the declaring statement, so siblings can be found. `""` when there is none. */
+  readonly statementId: string;
   /**
    * The declaration's tokens with formatting removed, as a single string.
    *
@@ -307,6 +337,34 @@ function fromExportAssignment(
 }
 
 /**
+ * The declaration keyword and statement modifiers a declarator shares with its siblings.
+ *
+ * `enclosingStatement` returns the *declarator* for a multi-declarator statement, so each
+ * sibling keeps its own span and signature. That left the shared `let` / `const` / `var`
+ * outside **every** declarator's signature: `let a = () => 1, b = () => 2;` becoming
+ * `var …` compared equal for both and was filtered as formatting, although it changes
+ * scoping and TDZ semantics for both callables (§8.1 as amended 2026-10-21).
+ *
+ * Returns nothing for the single-declarator case, where the statement is already the
+ * signature source and the keyword is included by that route.
+ *
+ * Sibling independence for *initializer* edits is unaffected: these tokens differ only
+ * when the shared tokens themselves change, which is exactly when every declarator the
+ * statement declares should be modified.
+ */
+function sharedStatementTokens(node: Node): string[] {
+  if (!Node.isVariableDeclaration(node)) return [];
+  const statement = node.getFirstAncestorByKind(SyntaxKind.VariableStatement);
+  if (statement === undefined) return [];
+  if (statement.getDeclarations().length === 1) return [];
+
+  return [
+    ...statement.getModifiers().map((modifier) => modifier.getText()),
+    statement.getDeclarationKind().toString(),
+  ];
+}
+
+/**
  * Whether an export assignment declares a function inline, rather than aliasing one.
  *
  * `export default foo` is an alias: the identity stays with `foo`'s own declaration.
@@ -342,7 +400,19 @@ function build(
     endLine: span.end,
     startPos: span.startPos,
     endPos: span.endPos,
+    ranges: span.ranges,
+    sharedTokens: sharedStatementTokens(node).join("\u0000"),
+    statementId: statementIdOf(node),
   };
+}
+
+/** Identifies the multi-declarator statement a declarator belongs to, within one file. */
+function statementIdOf(node: Node): string {
+  if (!Node.isVariableDeclaration(node)) return "";
+  const statement = node.getFirstAncestorByKind(SyntaxKind.VariableStatement);
+  if (statement === undefined) return "";
+  if (statement.getDeclarations().length === 1) return "";
+  return `${node.getSourceFile().getFilePath()}:${String(statement.getStart(true))}`;
 }
 
 function buildKey(
@@ -442,7 +512,7 @@ function tokenSignatureOf(node: Node): string {
       : declaration,
   );
 
-  const tokens: string[] = [];
+  const tokens: string[] = [...sharedStatementTokens(node)];
   const seenComments = new Set<number>();
   for (const declaration of declarations) {
     for (const leaf of leafTokensOf(declaration)) {
@@ -523,6 +593,7 @@ function lineSpanOf(node: Node): {
   end: number;
   startPos: number;
   endPos: number;
+  ranges: DeclarationRange[];
 } {
   const sourceFile = node.getSourceFile();
   // The span covers every declaration of the callable, so an edit to an overload
@@ -535,16 +606,26 @@ function lineSpanOf(node: Node): {
       : declaration,
   );
 
-  const startPositions = spanNodes.map((spanNode) => spanNode.getStart(true));
-  const endPositions = spanNodes.map((spanNode) => spanNode.getEnd());
-  const startPos = Math.min(...startPositions);
-  const endPos = Math.max(...endPositions);
+  const ranges = spanNodes.map((spanNode) => {
+    const start = spanNode.getStart(true);
+    const end = spanNode.getEnd();
+    return {
+      startLine: sourceFile.getLineAndColumnAtPos(start).line,
+      endLine: sourceFile.getLineAndColumnAtPos(end).line,
+      startPos: start,
+      endPos: end,
+    };
+  });
+
+  const startPos = Math.min(...ranges.map((range) => range.startPos));
+  const endPos = Math.max(...ranges.map((range) => range.endPos));
 
   return {
     start: sourceFile.getLineAndColumnAtPos(startPos).line,
     end: sourceFile.getLineAndColumnAtPos(endPos).line,
     startPos,
     endPos,
+    ranges,
   };
 }
 

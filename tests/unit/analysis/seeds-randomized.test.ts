@@ -227,13 +227,13 @@ async function runCase(generated: Generated): Promise<void> {
     pair.head.project.getSourceFiles(),
     repo.path,
   );
-  const result = mapSeeds({
-    diff,
-    base: enumerateCallables(pair.base.project.getSourceFiles(), repo.path),
-    head,
-  });
+  const base = enumerateCallables(
+    pair.base.project.getSourceFiles(),
+    repo.path,
+  );
+  const result = mapSeeds({ diff, base, head });
 
-  expectEveryChangedLineAccounted(result, diff, head);
+  expectEveryChangedLineAccounted(result, diff, head, base);
 }
 
 describe("the randomized suite is not silently disabled", () => {
