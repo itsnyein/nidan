@@ -170,9 +170,16 @@ describe("boundary insertions and deletions", () => {
   // `1452f50`: the insertion was attributed to an unchanged neighbour, compared equal,
   // and was absorbed by the formatting bucket — vanishing from the report while the
   // accounting balanced.
-  it.each(["seed-boundary-insert-between", "seed-boundary-delete-between"])(
-    "%s reports an unmapped-change gap and seeds neither neighbour",
-    async (name) => {
+  // The snapshot and line are asserted here rather than in `expected.json`, which records
+  // `site.file` only. For the deletion they are the interesting half of the expectation:
+  // the removed text exists solely in base, so a gap reported against head would name a
+  // line that does not contain the change.
+  it.each([
+    ["seed-boundary-insert-between", "head" as const, 5],
+    ["seed-boundary-delete-between", "base" as const, 5],
+  ])(
+    "%s reports an unmapped-change gap in %s at line %i, seeding neither neighbour",
+    async (name, snapshot, line) => {
       const outcome = await seedOutcome(name);
 
       expect(actualSeeds(outcome.result)).toEqual(expectedSeeds(name));
@@ -183,6 +190,8 @@ describe("boundary insertions and deletions", () => {
       expect(unmapped[0]).toMatchObject({
         filePath: "src/calc.ts",
         reasonCode: "no-enclosing-callable",
+        snapshot,
+        line,
       });
       // The guard that makes the miss impossible to hide: a hunk may only be counted as
       // formatting-filtered when its own changed text is formatting-only.
