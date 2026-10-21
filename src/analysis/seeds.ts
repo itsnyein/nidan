@@ -52,8 +52,8 @@ export type SeedGap =
 export interface HunkAccounting {
   readonly totalHunks: number;
   readonly seedConsumed: number;
-  /** Reformatting only: a real hunk, deliberately not a seed and not a gap (§8.1). */
-  readonly whitespaceFiltered: number;
+  /** Formatting only: a real hunk, deliberately not a seed and not a gap (§8.1). */
+  readonly formattingFiltered: number;
   readonly gapOnly: number;
 }
 
@@ -121,14 +121,14 @@ export function mapSeeds(input: MapSeedsInput): SeedResult {
   ]);
 
   let seedConsumed = 0;
-  let whitespaceFiltered = 0;
+  let formattingFiltered = 0;
   let gapOnly = 0;
   for (const attribution of attributions) {
     const keys = [...attribution.keys];
     if (keys.some((key) => seededKeys.has(key))) {
       seedConsumed += 1;
     } else if (keys.some((key) => filteredKeys.has(key))) {
-      whitespaceFiltered += 1;
+      formattingFiltered += 1;
     } else {
       gapOnly += 1;
       gaps.push(unmappedGap(attribution));
@@ -142,7 +142,7 @@ export function mapSeeds(input: MapSeedsInput): SeedResult {
     accounting: {
       totalHunks: attributions.length,
       seedConsumed,
-      whitespaceFiltered,
+      formattingFiltered,
       gapOnly,
     },
   };
@@ -230,7 +230,7 @@ function isStrictlyInside(inner: Callable, outer: Callable): boolean {
 /**
  * Classifies a touched key, or returns undefined when the change is reformatting only.
  *
- * The whitespace filter compares token signatures rather than text, so a rewrapped
+ * The formatting-only filter compares token signatures rather than text, so a rewrapped
  * argument list is not a seed while a changed comment is — §8.1 is explicit that a
  * comment edit counts, because a comment can state a contract callers rely on.
  */

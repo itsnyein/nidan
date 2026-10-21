@@ -99,13 +99,13 @@ describe("classification against the frozen fixtures", () => {
       // And no gap either: the fixture freezes an empty report. A whitespace change is
       // accounted for by being recognised, not by being reported.
       expect(result.gaps).toEqual([]);
-      expect(result.accounting.whitespaceFiltered).toBeGreaterThan(0);
+      expect(result.accounting.formattingFiltered).toBeGreaterThan(0);
     },
     TIMEOUT_MS,
   );
 
   it(
-    "seeds a comment change, which the whitespace filter must not swallow",
+    "seeds a comment change, which the formatting filter must not swallow",
     async () => {
       const result = await seedCase("seed-comment-change");
 
@@ -246,7 +246,7 @@ describe("hunk accounting", () => {
     "%s accounts for every hunk in the diff",
     async (name) => {
       const outcome = await seedOutcome(name);
-      const { totalHunks, seedConsumed, whitespaceFiltered, gapOnly } =
+      const { totalHunks, seedConsumed, formattingFiltered, gapOnly } =
         outcome.result.accounting;
 
       // Compared against the diff, not against the mapper's own counter. Both buckets
@@ -254,7 +254,7 @@ describe("hunk accounting", () => {
       // against the other can never fail — and would not notice a hunk the mapper never
       // attributed at all.
       expect(totalHunks).toBe(outcome.hunksInDiff);
-      expect(seedConsumed + whitespaceFiltered + gapOnly).toBe(
+      expect(seedConsumed + formattingFiltered + gapOnly).toBe(
         outcome.hunksInDiff,
       );
       expect(outcome.hunksInDiff).toBeGreaterThan(0);

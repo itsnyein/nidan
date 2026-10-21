@@ -94,11 +94,11 @@ function seedKeys(result: SeedResult): string[] {
  * tautological: both derive from the same array.
  */
 function expectAccountsForEveryHunk(outcome: Outcome): void {
-  const { seedConsumed, whitespaceFiltered, gapOnly, totalHunks } =
+  const { seedConsumed, formattingFiltered, gapOnly, totalHunks } =
     outcome.result.accounting;
 
   expect(totalHunks).toBe(outcome.hunksInDiff);
-  expect(seedConsumed + whitespaceFiltered + gapOnly).toBe(outcome.hunksInDiff);
+  expect(seedConsumed + formattingFiltered + gapOnly).toBe(outcome.hunksInDiff);
   expect(outcome.hunksInDiff).toBeGreaterThan(0);
 }
 
@@ -216,7 +216,7 @@ describe("whitespace inside literals is part of the value", () => {
       expect(seedKeys(outcome.result)).toEqual([
         "src/a.ts :: :: function :: f modified",
       ]);
-      expect(outcome.result.accounting.whitespaceFiltered).toBe(0);
+      expect(outcome.result.accounting.formattingFiltered).toBe(0);
     },
     TIMEOUT_MS,
   );
@@ -238,7 +238,7 @@ describe("whitespace inside literals is part of the value", () => {
       expect(seedKeys(outcome.result)).toEqual([
         "src/a.ts :: :: function :: f modified",
       ]);
-      expect(outcome.result.accounting.whitespaceFiltered).toBe(0);
+      expect(outcome.result.accounting.formattingFiltered).toBe(0);
     },
     TIMEOUT_MS,
   );
@@ -256,7 +256,7 @@ describe("whitespace inside literals is part of the value", () => {
       });
 
       expect(outcome.result.seeds).toEqual([]);
-      expect(outcome.result.accounting.whitespaceFiltered).toBeGreaterThan(0);
+      expect(outcome.result.accounting.formattingFiltered).toBeGreaterThan(0);
       expectAccountsForEveryHunk(outcome);
     },
     TIMEOUT_MS,

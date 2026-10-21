@@ -48,7 +48,7 @@ export interface Callable {
   readonly startLine: number;
   readonly endLine: number;
   /**
-   * The declaration's tokens with whitespace removed, as a single string.
+   * The declaration's tokens with formatting removed, as a single string.
    *
    * Comparing these across snapshots is how a reformatting-only change is told from a
    * real one. Comments are **included**: a JSDoc edit is a modification, because a
@@ -426,11 +426,15 @@ function leafTokensOf(declaration: Node): Node[] {
 /**
  * Removes a comma that sits immediately before a closing bracket.
  *
- * §8.1 says the whitespace filter compares token streams "without whitespace", but a
- * formatter does not only move whitespace: wrapping an argument list onto several lines
- * adds a trailing comma. Read strictly, every such reflow would be a modification, and
- * the filter would not do the one job the approved `seed-whitespace-only` fixture
- * describes — surviving a formatter run without seeding the whole repository.
+ * §8.1's filter is formatting-only, and ignores exactly two things: whitespace, and a
+ * trailing comma immediately before a closing bracket. The comma is in the list because
+ * a formatter does not only move whitespace — wrapping an argument list adds one — and
+ * without it every reflow would be a modification, which is the one job the approved
+ * `seed-whitespace-only` fixture says the filter must do.
+ *
+ * The list is **closed**. Quotes, semicolons, and parentheses stay significant even
+ * where a formatter may change them, because each can change meaning; a filter that
+ * grows by analogy stops being a filter.
  *
  * A trailing comma carries no meaning in any position JavaScript allows one, so dropping
  * it cannot hide a behavioural change. The narrowness matters: only a comma whose *next*
