@@ -57,7 +57,14 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test
+      - name: Test
+        # The randomized suite builds 40 Git repositories, so it is opt-in locally to
+        # keep iteration fast. CI always opts in, and a test asserts that: if this
+        # variable is ever dropped, `the randomized suite is not silently disabled`
+        # fails here rather than the suite quietly shrinking.
+        env:
+          OMEN_RANDOMIZED: "1"
+        run: pnpm test
       - run: pnpm build
       - name: Smoke-run the built CLI
         run: node dist/cli.js --version
