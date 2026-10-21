@@ -107,6 +107,81 @@ describe("containers that are not class declarations", () => {
   });
 });
 
+describe("a default-exported function is a container for what it holds", () => {
+  it.each([
+    [
+      "a function expression",
+      "export default function () {\n  function helper(): void {}\n}\n",
+    ],
+    ["an arrow", "export default () => {\n  function helper(): void {}\n};\n"],
+  ])("names the container `default` for %s", (_label, source) => {
+    // Both forms declare the same callable, so both must name their descendants the
+    // same way. Otherwise rewriting one as the other silently re-keys everything
+    // nested inside it.
+    const index = enumerate({ "src/a.ts": source });
+
+    expect(keys(index)).toContain("src/a.ts :: default :: function :: helper");
+  });
+
+  it("does not collide a nested helper with a top-level namesake", () => {
+    // The consequence of getting the container wrong: the nested helper loses its chain,
+    // matches the top-level `helper`, and both are dropped as a false collision — two
+    // supported callables silently gone, with no change to either.
+    const index = enumerate({
+      "src/a.ts":
+        "export function helper(): void {}\nexport default () => {\n  function helper(): void {}\n};\n",
+    });
+
+    expect(keys(index)).toEqual([
+      "src/a.ts :: :: function :: default",
+      "src/a.ts :: :: function :: helper",
+      "src/a.ts :: default :: function :: helper",
+    ]);
+    expect(index.collisions).toEqual([]);
+  });
+});
+
+describe("dependency exclusion is relative to the repository", () => {
+  it("keeps project files when the checkout path itself contains node_modules", () => {
+    // Someone whose repository sits under a directory called `node_modules` — a vendored
+    // checkout, a test harness — would otherwise have every callable excluded, and omen
+    // would report an empty analysis rather than an error.
+    const project = new Project({ useInMemoryFileSystem: true });
+    project.createSourceFile(
+      "/work/node_modules/app/src/a.ts",
+      "export function mine(): void {}\n",
+    );
+    project.createSourceFile(
+      "/work/node_modules/app/node_modules/dep/index.js",
+      "export function theirs() {}\n",
+    );
+
+    const index = enumerateCallables(
+      project.getSourceFiles(),
+      "/work/node_modules/app",
+    );
+
+    expect(keys(index)).toEqual(["src/a.ts :: :: function :: mine"]);
+  });
+
+  it("produces identical keys under two different checkout paths", () => {
+    const source = { "src/a.ts": "export function mine(): void {}\n" };
+    const plain = enumerate(source);
+
+    const nested = new Project({ useInMemoryFileSystem: true });
+    nested.createSourceFile(
+      "/work/node_modules/app/src/a.ts",
+      source["src/a.ts"],
+    );
+    const nestedIndex = enumerateCallables(
+      nested.getSourceFiles(),
+      "/work/node_modules/app",
+    );
+
+    expect(keys(nestedIndex)).toEqual(keys(plain));
+  });
+});
+
 describe("default exports", () => {
   it("keys a default-exported arrow as default", () => {
     // An ExportAssignment, not a function declaration. The dominant spelling in React
@@ -153,9 +228,11 @@ describe("the key never transforms user-controlled text", () => {
 
 describe("line spans", () => {
   it("gives each declarator of a multi-declarator statement its own span", () => {
-    // Sharing the statement's span would seed both when only one changed.
+    // One statement, two declarators, split across lines. Widening every declaration to
+    // its enclosing statement would give both the same span, so a change to one would
+    // seed both. Two separate `const` statements would not test that at all.
     const index = enumerate({
-      "src/a.ts": "const a = () => {};\nconst b = () => {\n  return 1;\n};\n",
+      "src/a.ts": "const a = () => {},\n  b = () => {\n    return 1;\n  };\n",
     });
 
     const byName = new Map(
@@ -165,5 +242,16 @@ describe("line spans", () => {
     expect(byName.get("a")?.endLine).toBe(1);
     expect(byName.get("b")?.startLine).toBe(2);
     expect(byName.get("b")?.endLine).toBe(4);
+  });
+
+  it("keeps the leading JSDoc for a single-declarator statement", () => {
+    // The other half of the rule: widening to the statement is what puts a doc comment
+    // inside the callable's span, so it must still happen when there is one declarator.
+    const index = enumerate({
+      "src/a.ts": "/** doc */\nexport const f = () => {\n  return 1;\n};\n",
+    });
+
+    expect(index.callables[0]?.startLine).toBe(1);
+    expect(index.callables[0]?.endLine).toBe(4);
   });
 });
