@@ -3,6 +3,7 @@ import {
   SyntaxKind,
   type ClassDeclaration,
   type ConstructorDeclaration,
+  type ExportAssignment,
   type FunctionDeclaration,
   type MethodDeclaration,
   type SourceFile,
@@ -23,6 +24,9 @@ export type DeclarationKind = "function" | "method" | "constructor";
 
 /** The name an anonymous default export is keyed by. */
 const ANONYMOUS_DEFAULT_NAME = "default";
+
+/** Directory whose contents are dependencies, never repository source. */
+const NODE_MODULES_SEGMENT = "node_modules";
 
 /** Separates container names within the chain, for a callable nested more than once. */
 const CONTAINER_SEPARATOR = ".";
@@ -79,6 +83,10 @@ export function enumerateCallables(
     // Declaration files are loaded so types resolve, but are never seeds (§7.1).
     if (sourceFile.isDeclarationFile()) continue;
     if (!isWithin(root, absolute)) continue;
+    // `node_modules` sits inside the repository root, so the check above does not
+    // exclude it. Dependency resolution pulls a package's own `.js` into the program,
+    // and third-party code must never become a seed or raise a gap about itself.
+    if (hasNodeModulesSegment(absolute)) continue;
     const filePath = absolute.slice(root.length + 1);
 
     for (const node of sourceFile.getDescendants()) {
@@ -88,6 +96,10 @@ export function enumerateCallables(
   }
 
   return groupByKey(found);
+}
+
+function hasNodeModulesSegment(absolutePath: string): boolean {
+  return absolutePath.split("/").includes(NODE_MODULES_SEGMENT);
 }
 
 /**
@@ -137,6 +149,8 @@ function toCallable(node: Node, filePath: string): Callable | undefined {
     return fromConstructor(node, filePath);
   if (Node.isVariableDeclaration(node))
     return fromVariableDeclaration(node, filePath);
+  if (Node.isExportAssignment(node))
+    return fromExportAssignment(node, filePath);
   // Everything else is unsupported by §6.1: anonymous callbacks, getters and setters,
   // object literal methods, and dynamically assigned properties among them.
   return undefined;
@@ -146,11 +160,7 @@ function fromFunctionDeclaration(
   node: FunctionDeclaration,
   filePath: string,
 ): Callable | undefined {
-  // Overload signatures and the implementation are one logical callable (§7.1). Keeping
-  // only the implementation avoids three declarations of the same function colliding
-  // with each other.
-  if (node.isOverload() && node.getImplementation() !== undefined)
-    return undefined;
+  if (isSupersededOverload(node)) return undefined;
 
   const name = node.getName();
   if (name === undefined) {
@@ -165,8 +175,13 @@ function fromMethod(
   node: MethodDeclaration,
   filePath: string,
 ): Callable | undefined {
-  if (node.isOverload() && node.getImplementation() !== undefined)
+  // An object literal's methods are also `MethodDeclaration` in the TypeScript AST, and
+  // §6.1 lists them as unsupported. Only a class member qualifies.
+  const parent = node.getParent();
+  if (!Node.isClassDeclaration(parent) && !Node.isClassExpression(parent)) {
     return undefined;
+  }
+  if (isSupersededOverload(node)) return undefined;
   return build(node, filePath, "method", node.getName(), node.isStatic());
 }
 
@@ -174,8 +189,7 @@ function fromConstructor(
   node: ConstructorDeclaration,
   filePath: string,
 ): Callable | undefined {
-  if (node.isOverload() && node.getImplementation() !== undefined)
-    return undefined;
+  if (isSupersededOverload(node)) return undefined;
   // Keyed `<Class> :: constructor :: constructor`, per the amendment to §7.2.
   return build(node, filePath, "constructor", "constructor", false);
 }
@@ -200,6 +214,73 @@ function fromVariableDeclaration(
   return build(node, filePath, "function", node.getName(), false);
 }
 
+/** A node that carries overloads: a function, method, or constructor declaration. */
+type Overloadable =
+  FunctionDeclaration | MethodDeclaration | ConstructorDeclaration;
+
+/**
+ * Whether this declaration is an overload signature that another declaration represents.
+ *
+ * Overload signatures and the implementation are one logical callable (§7.1), so exactly
+ * one declaration of a set must survive. When there is an implementation, that is the one.
+ * When there is none — an ambient `declare function f(…)` declared twice, which is
+ * ordinary code — the **first** signature is kept. Keeping all of them would make a set
+ * of overloads collide with itself and raise a spurious `ambiguous-identity` gap.
+ */
+function isSupersededOverload(node: Overloadable): boolean {
+  if (!node.isOverload()) return false;
+  if (node.getImplementation() !== undefined) return true;
+  const overloads = node.getOverloads();
+  const first = overloads[0];
+  return first !== undefined && first !== node;
+}
+
+/**
+ * The declarations that make up one logical callable: every overload signature plus the
+ * implementation. Used for the line span, so a diff touching only a signature still
+ * lands inside the callable's range.
+ */
+function declarationsOf(node: Node): Node[] {
+  if (
+    !Node.isFunctionDeclaration(node) &&
+    !Node.isMethodDeclaration(node) &&
+    !Node.isConstructorDeclaration(node)
+  ) {
+    return [node];
+  }
+  const overloads: Node[] = [...node.getOverloads()];
+  const implementation = node.getImplementation();
+  if (implementation !== undefined) overloads.push(implementation);
+  return overloads.length > 0 ? overloads : [node];
+}
+
+/**
+ * `export default () => {}` and `export default function () {}`.
+ *
+ * The arrow form is an `ExportAssignment`, not a function declaration, and matches no
+ * other branch. §6.1 supports anonymous default export functions, and the §7.2 amendment
+ * requires that the AST form not affect the key — so both spell `default`. Missing the
+ * arrow form would be a silent miss inside a supported pattern, and it is the dominant
+ * spelling in React code.
+ *
+ * `export = x` is excluded: it is a CommonJS export form, not a declaration.
+ */
+function fromExportAssignment(
+  node: ExportAssignment,
+  filePath: string,
+): Callable | undefined {
+  if (node.isExportEquals()) return undefined;
+  const expression = node.getExpression();
+  if (
+    !Node.isArrowFunction(expression) &&
+    !Node.isFunctionExpression(expression)
+  ) {
+    // `export default foo` is an alias: the identity stays with `foo`'s declaration.
+    return undefined;
+  }
+  return build(node, filePath, "function", ANONYMOUS_DEFAULT_NAME, false);
+}
+
 function build(
   node: Node,
   filePath: string,
@@ -221,24 +302,21 @@ function build(
   };
 }
 
-export function buildKey(
+function buildKey(
   filePath: string,
   containerChain: readonly string[],
   kind: DeclarationKind,
   name: string,
   isStatic: boolean,
 ): string {
-  const parts = [
-    filePath,
-    containerChain.join(CONTAINER_SEPARATOR),
-    kind,
-    name,
-  ];
-  if (isStatic) parts.push("static");
-  // A top-level callable has an empty container segment, and the separators around it
-  // share a single space: `src/a.ts :: :: function :: f`. That spacing is the form the
-  // approved fixtures freeze, so it is part of the key rather than cosmetic.
-  return parts.join(" :: ").replace(/ {2,}/g, " ");
+  // Assembled from segments rather than joined and then tidied. An earlier version
+  // collapsed repeated spaces across the whole key, which merged two legitimately
+  // distinct paths — `src/dup  space.ts` and `src/dup space.ts` — into one key. No
+  // transformation may touch user-controlled text.
+  const chain = containerChain.join(CONTAINER_SEPARATOR);
+  const head = chain === "" ? `${filePath} ::` : `${filePath} :: ${chain}`;
+  const key = `${head} :: ${kind} :: ${name}`;
+  return isStatic ? `${key} :: static` : key;
 }
 
 /**
@@ -260,6 +338,12 @@ function containersOf(node: Node): string[] {
 
 function containerNameOf(node: Node): string | undefined {
   if (Node.isClassDeclaration(node)) return classNameOf(node);
+  // A class expression is usually assigned to a variable; its own name wins when it has
+  // one, so `const K = class Named {}` chains as `Named` rather than `K`.
+  if (Node.isClassExpression(node)) {
+    return node.getName() ?? assignedVariableName(node);
+  }
+  if (Node.isModuleDeclaration(node)) return node.getName();
   if (Node.isFunctionDeclaration(node)) {
     return (
       node.getName() ??
@@ -286,6 +370,14 @@ function classNameOf(node: ClassDeclaration): string | undefined {
   );
 }
 
+/** The variable an expression is assigned to, when it is assigned directly to one. */
+function assignedVariableName(node: Node): string | undefined {
+  const parent = node.getParent();
+  return parent !== undefined && Node.isVariableDeclaration(parent)
+    ? parent.getName()
+    : undefined;
+}
+
 /**
  * The declaration's full line span, including leading JSDoc and decorators (§8.1).
  *
@@ -296,16 +388,35 @@ function classNameOf(node: ClassDeclaration): string | undefined {
  */
 function lineSpanOf(node: Node): { start: number; end: number } {
   const sourceFile = node.getSourceFile();
-  const spanNode = Node.isVariableDeclaration(node)
-    ? enclosingStatement(node)
-    : node;
-  const start = spanNode.getStart(true);
-  return {
-    start: sourceFile.getLineAndColumnAtPos(start).line,
-    end: sourceFile.getLineAndColumnAtPos(spanNode.getEnd()).line,
-  };
+  // The span covers every declaration of the callable, so an edit to an overload
+  // signature falls inside it. Spanning only the implementation would turn a signature
+  // change into an unmapped change — losing exactly the usage report a signature change
+  // most needs.
+  const spanNodes = declarationsOf(node).map((declaration) =>
+    Node.isVariableDeclaration(declaration)
+      ? enclosingStatement(declaration)
+      : declaration,
+  );
+
+  const starts = spanNodes.map(
+    (spanNode) =>
+      sourceFile.getLineAndColumnAtPos(spanNode.getStart(true)).line,
+  );
+  const ends = spanNodes.map(
+    (spanNode) => sourceFile.getLineAndColumnAtPos(spanNode.getEnd()).line,
+  );
+  return { start: Math.min(...starts), end: Math.max(...ends) };
 }
 
+/**
+ * The statement around a variable declaration, used so leading JSDoc falls inside the
+ * callable's span.
+ *
+ * Only when the statement declares one thing. `const a = () => {}, b = () => {};` would
+ * otherwise give `a` and `b` the same span, and a change to either would seed both.
+ */
 function enclosingStatement(node: VariableDeclaration): Node {
-  return node.getFirstAncestorByKind(SyntaxKind.VariableStatement) ?? node;
+  const statement = node.getFirstAncestorByKind(SyntaxKind.VariableStatement);
+  if (statement === undefined) return node;
+  return statement.getDeclarations().length === 1 ? statement : node;
 }

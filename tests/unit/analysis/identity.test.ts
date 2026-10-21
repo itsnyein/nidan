@@ -69,9 +69,13 @@ describe("keys match the approved fixtures", () => {
     async (name) => {
       const { head } = await enumerateCase(name);
       const keys = head.callables.map((callable) => callable.key);
+      const expected = expectedKeys(name);
 
-      for (const expected of expectedKeys(name)) {
-        expect(keys).toContain(expected);
+      // Asserted first: a fixture whose `expected.json` listed no seeds would make the
+      // loop below pass without checking anything.
+      expect(expected.length).toBeGreaterThan(0);
+      for (const key of expected) {
+        expect(keys).toContain(key);
       }
     },
     TIMEOUT_MS,
@@ -82,9 +86,11 @@ describe("keys match the approved fixtures", () => {
     async () => {
       const { head } = await enumerateCase("identity-default-exports");
       const keys = head.callables.map((callable) => callable.key);
+      const expected = expectedKeys("identity-default-exports");
 
-      for (const expected of expectedKeys("identity-default-exports")) {
-        expect(keys).toContain(expected);
+      expect(expected).toHaveLength(3);
+      for (const key of expected) {
+        expect(keys).toContain(key);
       }
       // `export default toSlug` is an alias, not a declaration: the identity stays
       // `toSlug`, and nothing is keyed `default` in that file.
@@ -192,9 +198,13 @@ describe("unsupported forms are absent, not guessed", () => {
       // `render` contains `rows.map((row) => formatRow(row))`. The arrow is an anonymous
       // callback: unsupported, so it is not a callable and contributes no container.
       expect(keys).toContain("src/main.ts :: :: function :: render");
-      // Nothing is keyed with a doubled separator, which is what an unnamed container
-      // would produce if an anonymous arrow were treated as one.
-      expect(keys.some((key) => key.includes(":: :: :: "))).toBe(false);
+      // The arrow contributes no container, so the callable it encloses is attributed to
+      // `render`. Asserted as an exact key list, because "no key contains X" passes for
+      // any X that nothing produces and so proves nothing.
+      expect(keys).toEqual([
+        "src/format.ts :: :: function :: formatRow",
+        "src/main.ts :: :: function :: render",
+      ]);
     },
     TIMEOUT_MS,
   );
@@ -204,16 +214,17 @@ describe("unsupported forms are absent, not guessed", () => {
     async () => {
       const { head } = await enumerateCase("layout-pnpm");
 
-      // tiny-ui's types are .d.ts under node_modules. They are loaded so types resolve,
-      // but are never seeds, and nothing outside the repository may appear at all.
+      // tiny-ui ships only .d.ts, so this covers the declaration-file rule alone. The
+      // node_modules rule needs a dependency with real source, which
+      // identity-edge-cases.test.ts supplies — asserting it here too would pass
+      // whether or not that rule exists.
       expect(
         head.callables.some((callable) => callable.filePath.endsWith(".d.ts")),
       ).toBe(false);
-      expect(
-        head.callables.some((callable) =>
-          callable.filePath.includes("node_modules"),
-        ),
-      ).toBe(false);
+      expect(head.callables.map((callable) => callable.key)).toEqual([
+        "src/app.tsx :: :: function :: App",
+        "src/card.tsx :: :: function :: Card",
+      ]);
     },
     TIMEOUT_MS,
   );
