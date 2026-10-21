@@ -221,7 +221,10 @@ describe("a hunk with two separate uncovered regions", () => {
         .filter((gap) => gap.kind === "unmapped-change")
         .map((gap) => `${gap.snapshot}:${String(gap.line)}`)
         .sort();
-      expect(unmapped).toEqual(["head:1", "head:3"]);
+      // Both sides, per the 2026-10-21 ruling: the base side's uncovered lines are a
+      // real deletion of text and are named on their own snapshot, not represented by
+      // the head gap.
+      expect(unmapped).toEqual(["base:1", "base:3", "head:1", "head:3"]);
       // Counted once, as seed-consumed: two gaps about one hunk are not two hunks.
       expect(outcome.result.accounting).toMatchObject({
         totalHunks: 1,
@@ -915,7 +918,10 @@ describe("hunks with nothing to attribute to", () => {
       });
 
       expect(outcome.result.seeds).toEqual([]);
+      // One per side: the modified line is uncovered in both snapshots, and each side's
+      // uncovered run is named on its own snapshot (§8.2 as ruled 2026-10-21).
       expect(outcome.result.gaps.map((gap) => gap.kind)).toEqual([
+        "unmapped-change",
         "unmapped-change",
       ]);
       expectAccountsForEveryHunk(outcome);

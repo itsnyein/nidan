@@ -63,6 +63,11 @@ export function expectEveryChangedLineAccounted(
   }
 
   for (const line of uncovered) {
+    // A gap names the first line of a contiguous run, so a line is answered when a gap
+    // on **its own snapshot** sits at or before it with every line between also
+    // uncovered. No cross-snapshot fallback: every uncovered run is reported on its own
+    // side (§8.2 as ruled 2026-10-21), and accepting a gap from the other side was how
+    // round 1's condemned file-level check crept back in as a disjunct.
     const sameSide = gapsByFile.get(`${line.snapshot}:${line.filePath}`) ?? [];
     const answered = sameSide.some((start) => {
       if (start > line.line) return false;
@@ -77,13 +82,8 @@ export function expectEveryChangedLineAccounted(
       }
       return true;
     });
-    // The other snapshot describes the same change; one side is reported per hunk.
-    const otherSide =
-      (gapsByFile.get(`base:${line.filePath}`)?.length ?? 0) +
-        (gapsByFile.get(`head:${line.filePath}`)?.length ?? 0) >
-      0;
     expect(
-      answered || otherSide,
+      answered,
       `${line.snapshot} line ${String(line.line)} of ${line.filePath} is uncovered but no gap names its region`,
     ).toBe(true);
   }
@@ -127,6 +127,32 @@ export function expectEveryChangedLineAccounted(
   // the same callable has no reported range to check against. Added and deleted seeds are
   // covered on their own snapshot. This is a real limit on the invariant's strength, not
   // an oversight.
+  // And for `ambiguous`: the line must actually lie inside a colliding declaration, and
+  // that collision must be reported. Otherwise the bucket becomes a place to hide a line
+  // nobody accounted for — the same escape hatch the other labels needed closing.
+  if (head !== undefined) {
+    const reported = new Set(
+      result.gaps
+        .filter((gap) => gap.kind === "ambiguous-identity")
+        .map((gap) => `${gap.filePath}:${gap.key}`),
+    );
+    for (const line of result.coverage) {
+      if (line.bucket !== "ambiguous" || line.snapshot !== "head") continue;
+      const inside = head.collisions.some(
+        (collision) =>
+          collision.filePath === line.filePath &&
+          reported.has(`${collision.filePath}:${collision.key}`) &&
+          collision.spans.some(
+            (span) => line.line >= span.start && line.line <= span.end,
+          ),
+      );
+      expect(
+        inside,
+        `head line ${String(line.line)} of ${line.filePath} is labelled "ambiguous" but lies inside no reported collision`,
+      ).toBe(true);
+    }
+  }
+
   // The same corroboration for `formatting`. Trusting this label lets a hunk that seeds
   // something relabel its *uncovered* lines as formatting-only and vanish them: no gap,
   // no seed, accounting balanced. A label is only evidence if something independent

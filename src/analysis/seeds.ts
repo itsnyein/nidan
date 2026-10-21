@@ -162,7 +162,7 @@ export function mapSeeds(input: MapSeedsInput): SeedResult {
     // another below it — and a single gap names only one of them, leaving the other
     // changed but unreported. That is the same silent miss this task exists to close,
     // surviving at a finer grain than the hunk.
-    for (const run of uncoveredRuns(attribution, uncovered)) {
+    for (const run of uncoveredRuns(uncovered)) {
       gaps.push(unmappedGap(attribution, run));
     }
   }
@@ -194,7 +194,8 @@ export function mapSeeds(input: MapSeedsInput): SeedResult {
  * it — seeded, or equal across snapshots. `uncovered` means no such callable exists, so
  * the line must be reported as a gap.
  */
-export type CoverageBucket = "seeded" | "formatting" | "uncovered";
+export type CoverageBucket =
+  "seeded" | "formatting" | "ambiguous" | "uncovered";
 
 export interface CoveredLine {
   readonly snapshot: Snapshot;
@@ -247,12 +248,7 @@ function coverageOf(
         snapshot,
         filePath: attribution.fileDiff.path,
         line,
-        bucket:
-          owners.length === 0
-            ? "uncovered"
-            : owners.some((key) => seededKeys.has(key))
-              ? "seeded"
-              : "formatting",
+        bucket: bucketFor(owners, seededKeys, index, attribution, line),
       });
     }
   }
@@ -389,6 +385,32 @@ function innermostOwners(
   );
 }
 
+/**
+ * Which bucket a changed line falls in.
+ *
+ * A line with no unique-identity owner is not automatically unaccounted for: if it lies
+ * inside a callable whose key collides, the `ambiguous-identity` gap already describes
+ * that code (§8.2, pre-ruling 3 of 2026-10-21). Reporting it again as an unmapped change
+ * would claim omen could not map something it mapped and then declined to seed.
+ */
+function bucketFor(
+  owners: readonly string[],
+  seededKeys: ReadonlySet<string>,
+  index: CallableIndex,
+  attribution: Attribution,
+  line: number,
+): CoverageBucket {
+  if (owners.length > 0) {
+    return owners.some((key) => seededKeys.has(key)) ? "seeded" : "formatting";
+  }
+  const insideCollision = index.collisions.some(
+    (collision) =>
+      collision.filePath === attribution.fileDiff.path &&
+      collision.spans.some((span) => line >= span.start && line <= span.end),
+  );
+  return insideCollision ? "ambiguous" : "uncovered";
+}
+
 /** Whether `inner` sits strictly within `outer`, by character position. */
 function isStrictlyInside(inner: Callable, outer: Callable): boolean {
   const within =
@@ -467,34 +489,34 @@ function dedupeCollisions(gaps: readonly SeedGap[]): SeedGap[] {
   return unique;
 }
 
-function uncoveredRuns(
-  attribution: Attribution,
-  uncovered: readonly CoveredLine[],
-): CoveredLine[][] {
-  if (uncovered.length === 0) return [];
+function uncoveredRuns(uncovered: readonly CoveredLine[]): CoveredLine[][] {
+  // Grouped per snapshot as well as per run. Preferring one side discards real changes:
+  // a statement deleted beside a modified callable has uncovered **base** lines and no
+  // head counterpart, so a head-only gap names nothing for it (§8.2 as ruled
+  // 2026-10-21). The hunk is still counted once; these gaps describe it, they are not
+  // additional hunks.
+  const bySnapshot = new Map<Snapshot, CoveredLine[]>();
+  for (const line of uncovered) {
+    bySnapshot.set(line.snapshot, [
+      ...(bySnapshot.get(line.snapshot) ?? []),
+      line,
+    ]);
+  }
 
-  // Reported against the side that actually holds the uncovered text. A deleted file has
-  // no head side at all, and a pure deletion inside a modified file has an empty head
-  // range — naming a head line there would point at code that did not change. When both
-  // sides hold uncovered text the head side wins: it is the snapshot usages are taken
-  // from, and the two sides describe the same change, so reporting both double-reports it.
-  const preferred: Snapshot =
-    attribution.fileDiff.change === "deleted" ||
-    attribution.hunk.head.count === 0
-      ? "base"
-      : "head";
-  const onPreferred = uncovered.filter((line) => line.snapshot === preferred);
-  const reported = onPreferred.length > 0 ? onPreferred : [...uncovered];
-
-  const ordered = [...reported].sort((left, right) => left.line - right.line);
   const runs: CoveredLine[][] = [];
-  for (const line of ordered) {
-    const current = runs.at(-1);
-    const previous = current?.at(-1);
-    if (current !== undefined && previous?.line === line.line - 1) {
-      current.push(line);
-    } else {
-      runs.push([line]);
+  for (const lines of bySnapshot.values()) {
+    const ordered = [...lines].sort((left, right) => left.line - right.line);
+    let current: CoveredLine[] | undefined;
+    for (const line of ordered) {
+      if (
+        current !== undefined &&
+        current[current.length - 1]?.line === line.line - 1
+      ) {
+        current.push(line);
+      } else {
+        current = [line];
+        runs.push(current);
+      }
     }
   }
   return runs;
