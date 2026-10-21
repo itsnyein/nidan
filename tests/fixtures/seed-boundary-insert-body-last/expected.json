@@ -1,0 +1,13 @@
+{
+  "description": "A line inserted as the last line of a function body sits between the final statement and the closing brace, both inside the function, so it seeds the function.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/calc.ts :: :: function :: record",
+        "change": "modified"
+      }
+    ],
+    "repoWideGaps": []
+  }
+}

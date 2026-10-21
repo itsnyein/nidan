@@ -1,0 +1,13 @@
+{
+  "description": "A line inserted as the first line of a function body sits between two lines of that same function, so it seeds the function. The boundary rule must not turn every zero-count range into a gap.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/calc.ts :: :: function :: record",
+        "change": "modified"
+      }
+    ],
+    "repoWideGaps": []
+  }
+}
