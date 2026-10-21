@@ -8,6 +8,7 @@ import { enumerateCallables } from "../../../src/analysis/identity.js";
 import { mapSeeds, type SeedResult } from "../../../src/analysis/seeds.js";
 import { loadSnapshotPair } from "../../../src/project/program.js";
 import { createFixtureRepo } from "../../helpers/fixture-repo.js";
+import { expectGapsMatchFixture } from "../../helpers/fixture-gaps.js";
 import { expectEveryChangedLineAccounted } from "../../helpers/line-coverage.js";
 
 const TIMEOUT_MS = 60_000;
@@ -47,9 +48,9 @@ async function seedOutcome(name: string): Promise<Outcome> {
   });
 
   // Asserted here rather than in each test, so **every** fixture the suite exercises is
-  // held to the line-level invariant — including ones added later, whose authors need not
-  // remember to ask for it.
+  // held to both — including ones added later, whose authors need not remember to ask.
   expectEveryChangedLineAccounted(result, diff, head);
+  expectGapsMatchFixture(result, name);
 
   return {
     result,
