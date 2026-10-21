@@ -1,0 +1,20 @@
+{
+  "description": "One hunk changes both a callable and a top-level statement. The callable is seeded and the top-level line is reported as an unmapped-change gap; the hunk counts once, as seed-consumed.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/calc.ts :: :: function :: total",
+        "change": "modified"
+      }
+    ],
+    "repoWideGaps": [
+      {
+        "kind": "unmapped-change",
+        "snapshot": "head",
+        "site": { "file": "src/calc.ts" },
+        "reasonCode": "no-enclosing-callable"
+      }
+    ]
+  }
+}
