@@ -97,7 +97,7 @@ To tell whether a callable was added, deleted, or modified, omen matches declara
 relativePosixPath :: containerChain :: declarationKind :: name [:: static]
 ```
 
-- `containerChain` holds the enclosing classes and callables, which is what distinguishes nested functions that share a name.
+- `containerChain` holds the enclosing classes and callables, outermost first, separated by `.` — for example `Outer.run`. It is what distinguishes nested functions that share a name. Only nameable containers appear, so a function declared inside an anonymous callback is attributed to the nearest named container above it.
 - The signature is **not** part of the key, so changing parameters or return type is a modification rather than a delete plus an add.
 - A named default export is keyed by its local name. An anonymous default export is keyed as `default`. In `export default foo`, the default is an alias, so the identity is `foo`.
 
@@ -108,6 +108,12 @@ relativePosixPath :: containerChain :: declarationKind :: name [:: static]
 | `function`    | Named function declarations, named variables holding an arrow or function expression, and named or anonymous default exports |
 | `method`      | Instance and static methods. A static method carries the trailing `:: static`                                                |
 | `constructor` | A class constructor, keyed as `<path> :: <Class> :: constructor :: constructor`                                              |
+
+The `static` marker belongs to a method's own key and is **not** part of the container
+chain. A consequence worth knowing: two functions with the same name, nested inside a
+static and an instance method that also share a name, produce the same key and are
+reported as an [ambiguous identity](limitations.md#duplicate-identity-keys-stop-matching)
+rather than matched.
 
 **How a callable is written does not affect its key.** `function` deliberately spans
 several syntactic forms, so rewriting a function declaration as an arrow-expression
