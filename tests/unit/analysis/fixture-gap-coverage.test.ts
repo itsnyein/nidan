@@ -12,7 +12,7 @@ import {
   expectGapsMatchFixture,
   allFixtures,
   parseRecordedGaps,
-  recordedGaps as readRecordedGaps,
+  parseRecord,
   type RecordedGap,
 } from "../../helpers/fixture-gaps.js";
 import { createFixtureRepo } from "../../helpers/fixture-repo.js";
@@ -227,11 +227,26 @@ describe("recorded gaps must state every field", () => {
     }).toThrow(/kind/);
   });
 
-  it("rejects a record with no repoWideGaps array", () => {
-    // An absent key must not read as "expects no gaps".
+  it.each([
+    ["no expect object", {}, /has no "expect" object/],
+    ["no repoWideGaps array", { expect: {} }, /repoWideGaps/],
+  ])("rejects a record with %s", (_label, record, pattern) => {
+    // Driven through `parseRecord` with a **synthetic parsed record**, so the rule
+    // itself runs. The previous version passed a non-existent fixture name, so
+    // `readFileSync` threw ENOENT before any of this was reached and a bare
+    // `.toThrow()` accepted it — the named rule was defended by nothing, and removing
+    // it left the suite green (§7a).
     expect(() => {
-      readRecordedGaps("__does_not_exist__");
-    }).toThrow();
+      parseRecord(record, "synthetic");
+    }).toThrow(pattern);
+  });
+
+  it("accepts a record that explicitly states no gaps", () => {
+    // The other direction: `[]` is a real assertion and must not be rejected alongside a
+    // missing key.
+    expect(parseRecord({ expect: { repoWideGaps: [] } }, "synthetic")).toEqual(
+      [],
+    );
   });
 
   it("accepts a complete record", () => {

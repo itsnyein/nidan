@@ -64,6 +64,11 @@ describe("keys match the approved fixtures", () => {
     "identity-constructor",
     "seed-comment-change",
     "seed-declaration-form-change",
+    // Carries the `.` container separator frozen by E2b. Without it the separator is
+    // defended by nothing: mutating it to "/" passed the entire unit suite, because every
+    // other key-asserting fixture has at most one container and so shows no separator at
+    // all, and a collision survives any separator change since both chains change alike.
+    "identity-nested-two-level",
   ])(
     "%s produces the frozen key",
     async (name) => {
