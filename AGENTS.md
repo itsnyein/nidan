@@ -168,6 +168,15 @@ acceptance criteria with evidence for each, decisions not covered by the spec
 (mark as ADR candidates), open questions, risks, suggested one-line
 Conventional Commit message.
 
+**For every new test, state why its input has the shape the test's name claims.** One
+line per test is enough. This exists because the opposite failure has been common and is
+invisible to a passing suite: a test whose assertion is correct but whose _input_ does not
+reach the case it names — a "multi-declarator" input that is two separate statements, a
+"mixed hunk" whose edits are on non-adjacent lines and so produce two hunks, a "siblings"
+input whose declarations are on separate lines and so never contend. Each passed, and each
+defended nothing. Mutation evidence is what catches this, so pair the two: the mutation
+result proves the test can fail, and this line proves it fails for the stated reason.
+
 ## Review report format
 
 One entry per finding: BLOCKING or NON-BLOCKING, `file:line`, problem,
