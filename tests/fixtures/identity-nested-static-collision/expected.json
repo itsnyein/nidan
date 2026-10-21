@@ -1,0 +1,23 @@
+{
+  "description": "Static and instance methods sharing a name produce the same container chain, so same-named functions nested inside them collide and are reported rather than matched.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/registry.ts :: Registry :: method :: create :: static",
+        "change": "modified",
+        "usages": [],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": [
+      {
+        "kind": "ambiguous-identity",
+        "snapshot": "head",
+        "site": { "file": "src/registry.ts" },
+        "reasonCode": "duplicate-structural-key"
+      }
+    ]
+  }
+}
