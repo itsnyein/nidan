@@ -143,7 +143,12 @@ A diff hunk that overlaps any part of a callable's full range makes that callabl
 
 ### Whitespace filter
 
-omen compares the base and head token streams of the callable with whitespace removed. If they are equal, the callable is not a seed — reformatting alone never produces results.
+omen compares the base and head token streams of the callable with whitespace removed. If
+they are equal, the callable is not a seed — reformatting alone never produces results.
+
+A trailing comma immediately before a closing `)`, `]`, or `}` is ignored too, because a
+formatter adds one when it wraps an argument list. The exemption is deliberately narrow:
+only a comma directly before a closing bracket, where it carries no meaning.
 
 Comment changes, including JSDoc and pragma comments, **do** count as a modification. They sit inside the callable's range and can carry meaning.
 

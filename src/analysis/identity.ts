@@ -1,6 +1,7 @@
 import {
   Node,
   SyntaxKind,
+  ts,
   type ClassDeclaration,
   type ConstructorDeclaration,
   type ExportAssignment,
@@ -47,6 +48,14 @@ export interface Callable {
    */
   readonly startLine: number;
   readonly endLine: number;
+  /**
+   * The declaration's tokens with whitespace removed, as a single string.
+   *
+   * Comparing these across snapshots is how a reformatting-only change is told from a
+   * real one. Comments are **included**: a JSDoc edit is a modification, because a
+   * comment can state a contract callers rely on.
+   */
+  readonly tokenSignature: string;
 }
 
 /** Two or more declarations in one snapshot that compute the same key. */
@@ -291,6 +300,7 @@ function build(
   const containerChain = containersOf(node);
   const span = lineSpanOf(node);
   return {
+    tokenSignature: tokenSignatureOf(node),
     key: buildKey(filePath, containerChain, kind, name, isStatic),
     filePath,
     containerChain,
@@ -368,6 +378,75 @@ function classNameOf(node: ClassDeclaration): string | undefined {
     node.getName() ??
     (node.isDefaultExport() ? ANONYMOUS_DEFAULT_NAME : undefined)
   );
+}
+
+/**
+ * Tokenizes a declaration and joins the tokens, dropping only whitespace.
+ *
+ * Text comparison with the spaces stripped would be wrong: `a b` and `ab` are different
+ * programs but the same stripped string. Scanning gives real token boundaries, and the
+ * separator below keeps them apart.
+ *
+ * Trivia is not skipped, so comments take part — §8.1 is explicit that a comment change
+ * counts as a modification.
+ */
+function tokenSignatureOf(node: Node): string {
+  const declarations = declarationsOf(node).map((declaration) =>
+    Node.isVariableDeclaration(declaration)
+      ? enclosingStatement(declaration)
+      : declaration,
+  );
+
+  const tokens: string[] = [];
+  for (const declaration of declarations) {
+    const sourceFile = declaration.getSourceFile();
+    const text = sourceFile
+      .getFullText()
+      .slice(declaration.getStart(true), declaration.getEnd());
+    const scanner = ts.createScanner(
+      ts.ScriptTarget.Latest,
+      false,
+      undefined,
+      text,
+    );
+    for (
+      let kind = scanner.scan();
+      kind !== ts.SyntaxKind.EndOfFileToken;
+      kind = scanner.scan()
+    ) {
+      if (
+        kind === ts.SyntaxKind.WhitespaceTrivia ||
+        kind === ts.SyntaxKind.NewLineTrivia
+      ) {
+        continue;
+      }
+      tokens.push(scanner.getTokenText());
+    }
+  }
+  // A separator no token can contain, so two different token sequences cannot join into
+  // the same signature.
+  return dropTrailingCommas(tokens).join("\u0000");
+}
+
+/**
+ * Removes a comma that sits immediately before a closing bracket.
+ *
+ * §8.1 says the whitespace filter compares token streams "without whitespace", but a
+ * formatter does not only move whitespace: wrapping an argument list onto several lines
+ * adds a trailing comma. Read strictly, every such reflow would be a modification, and
+ * the filter would not do the one job the approved `seed-whitespace-only` fixture
+ * describes — surviving a formatter run without seeding the whole repository.
+ *
+ * A trailing comma carries no meaning in any position JavaScript allows one, so dropping
+ * it cannot hide a behavioural change. The narrowness matters: only a comma directly
+ * before `)`, `]`, or `}` is removed, so `f(a, , b)` and `f(a, b)` stay distinct.
+ */
+function dropTrailingCommas(tokens: readonly string[]): string[] {
+  return tokens.filter((token, index) => {
+    if (token !== ",") return true;
+    const next = tokens[index + 1];
+    return next !== ")" && next !== "]" && next !== "}";
+  });
 }
 
 /** The variable an expression is assigned to, when it is assigned directly to one. */
