@@ -147,8 +147,9 @@ omen compares the base and head token streams of the callable with whitespace re
 they are equal, the callable is not a seed — reformatting alone never produces results.
 
 A trailing comma immediately before a closing `)`, `]`, or `}` is ignored too, because a
-formatter adds one when it wraps an argument list. The exemption is deliberately narrow:
-only a comma directly before a closing bracket, where it carries no meaning.
+formatter adds one when it wraps an argument list. The exemption is deliberately narrow: only a comma whose next token closes the bracket.
+An array hole therefore survives — `[1, ,]` has two elements and `[1,]` has one, and omen
+treats a change between them as a modification.
 
 Comment changes, including JSDoc and pragma comments, **do** count as a modification. They sit inside the callable's range and can carry meaning.
 

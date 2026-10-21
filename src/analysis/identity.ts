@@ -1,7 +1,6 @@
 import {
   Node,
   SyntaxKind,
-  ts,
   type ClassDeclaration,
   type ConstructorDeclaration,
   type ExportAssignment,
@@ -381,14 +380,19 @@ function classNameOf(node: ClassDeclaration): string | undefined {
 }
 
 /**
- * Tokenizes a declaration and joins the tokens, dropping only whitespace.
+ * The declaration's tokens, joined, with whitespace between them dropped.
  *
- * Text comparison with the spaces stripped would be wrong: `a b` and `ab` are different
- * programs but the same stripped string. Scanning gives real token boundaries, and the
- * separator below keeps them apart.
+ * Tokens come from the **parsed AST**, not from re-scanning the text. A bare
+ * `ts.createScanner` has no parser context: after a `${…}` substitution it resumes in
+ * normal mode rather than scanning a template continuation, and it reads `/` as a divide
+ * operator rather than starting a regular expression. In both cases the literal's own
+ * whitespace is treated as separator and discarded, so `` `a ${x}  b` `` and
+ * `` `a ${x} b` `` — different strings — compare equal. Leaf nodes carry each literal as
+ * one token with its text intact.
  *
- * Trivia is not skipped, so comments take part — §8.1 is explicit that a comment change
- * counts as a modification.
+ * Comments are included, because §8.1 makes a comment edit a modification: a comment can
+ * state a contract callers rely on. Every comment is leading trivia of some token, so
+ * collecting each leaf's leading comments captures them in source order.
  */
 function tokenSignatureOf(node: Node): string {
   const declarations = declarationsOf(node).map((declaration) =>
@@ -399,33 +403,24 @@ function tokenSignatureOf(node: Node): string {
 
   const tokens: string[] = [];
   for (const declaration of declarations) {
-    const sourceFile = declaration.getSourceFile();
-    const text = sourceFile
-      .getFullText()
-      .slice(declaration.getStart(true), declaration.getEnd());
-    const scanner = ts.createScanner(
-      ts.ScriptTarget.Latest,
-      false,
-      undefined,
-      text,
-    );
-    for (
-      let kind = scanner.scan();
-      kind !== ts.SyntaxKind.EndOfFileToken;
-      kind = scanner.scan()
-    ) {
-      if (
-        kind === ts.SyntaxKind.WhitespaceTrivia ||
-        kind === ts.SyntaxKind.NewLineTrivia
-      ) {
-        continue;
+    for (const leaf of leafTokensOf(declaration)) {
+      for (const comment of leaf.getLeadingCommentRanges()) {
+        tokens.push(comment.getText());
       }
-      tokens.push(scanner.getTokenText());
+      tokens.push(leaf.getText());
     }
   }
+
   // A separator no token can contain, so two different token sequences cannot join into
   // the same signature.
   return dropTrailingCommas(tokens).join("\u0000");
+}
+
+/** The declaration's leaf nodes in source order — one entry per token. */
+function leafTokensOf(declaration: Node): Node[] {
+  return declaration
+    .getDescendants()
+    .filter((descendant) => descendant.getChildCount() === 0);
 }
 
 /**
@@ -438,8 +433,10 @@ function tokenSignatureOf(node: Node): string {
  * describes — surviving a formatter run without seeding the whole repository.
  *
  * A trailing comma carries no meaning in any position JavaScript allows one, so dropping
- * it cannot hide a behavioural change. The narrowness matters: only a comma directly
- * before `)`, `]`, or `}` is removed, so `f(a, , b)` and `f(a, b)` stay distinct.
+ * it cannot hide a behavioural change. The narrowness matters: only a comma whose *next*
+ * token closes the bracket is removed, so an array hole survives — `[1, ,]` has length 2
+ * and `[1,]` has length 1, and they keep different signatures because the hole's comma is
+ * followed by another comma rather than by `]`.
  */
 function dropTrailingCommas(tokens: readonly string[]): string[] {
   return tokens.filter((token, index) => {

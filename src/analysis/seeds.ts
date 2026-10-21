@@ -168,42 +168,63 @@ function attributeHunk(
   const keys = new Set<string>();
 
   if (fileDiff.change !== "added") {
-    const key = innermostUniqueKey(base, fileDiff.path, hunk.base);
-    if (key !== undefined) keys.add(key);
+    for (const key of innermostUniqueKeys(base, fileDiff.path, hunk.base)) {
+      keys.add(key);
+    }
   }
   if (fileDiff.change !== "deleted") {
-    const key = innermostUniqueKey(head, fileDiff.path, hunk.head);
-    if (key !== undefined) keys.add(key);
+    for (const key of innermostUniqueKeys(head, fileDiff.path, hunk.head)) {
+      keys.add(key);
+    }
   }
 
   return keys;
 }
 
 /**
- * The innermost callable overlapping the range whose identity is unique.
+ * The innermost callables overlapping the range whose identity is unique.
  *
- * Innermost because §8.2 attributes a change to the nearest supported callable — the
- * outer one's dependency shows up as a usage of the inner. Unique because a callable
- * whose key collides cannot be identified: seeding it would attribute the change to one
- * of two declarations arbitrarily, so attribution continues outward past it and the
- * collision is reported separately.
+ * A **set**, not one. A single hunk routinely covers several callables: Git emits an
+ * added or deleted file as one hunk spanning the whole file, and an edit can straddle two
+ * siblings. Returning only one would leave the others neither seeded nor reported —
+ * silently ignored, which §8.2 forbids.
+ *
+ * "Innermost" is containment, not smallest span. A callable is kept unless another
+ * overlapping callable sits strictly inside it, because that inner one is the nearer
+ * attribution (§8.2). Two siblings contain each other not at all, so both are kept.
+ *
+ * Callables whose identity collides are absent from `index.callables` already, so
+ * attribution passes over them to the next enclosing candidate and their gap is reported
+ * separately (§8.2 as amended).
  */
-function innermostUniqueKey(
+function innermostUniqueKeys(
   index: CallableIndex,
   filePath: string,
   range: Hunk["base"],
-): string | undefined {
-  let best: Callable | undefined;
-  for (const callable of index.callables) {
-    if (callable.filePath !== filePath) continue;
-    if (!overlapsSpan(range, callable.startLine, callable.endLine)) continue;
-    if (best === undefined || spanOf(callable) < spanOf(best)) best = callable;
-  }
-  return best?.key;
+): string[] {
+  const overlapping = index.callables.filter(
+    (callable) =>
+      callable.filePath === filePath &&
+      overlapsSpan(range, callable.startLine, callable.endLine),
+  );
+
+  return overlapping
+    .filter(
+      (candidate) =>
+        !overlapping.some(
+          (other) => other !== candidate && isStrictlyInside(other, candidate),
+        ),
+    )
+    .map((callable) => callable.key);
 }
 
-function spanOf(callable: Callable): number {
-  return callable.endLine - callable.startLine;
+/** Whether `inner` sits strictly within `outer`'s line span. */
+function isStrictlyInside(inner: Callable, outer: Callable): boolean {
+  const within =
+    inner.startLine >= outer.startLine && inner.endLine <= outer.endLine;
+  const identical =
+    inner.startLine === outer.startLine && inner.endLine === outer.endLine;
+  return within && !identical;
 }
 
 /**
@@ -276,9 +297,12 @@ function dedupeCollisions(gaps: readonly SeedGap[]): SeedGap[] {
 }
 
 function unmappedGap(attribution: Attribution): SeedGap {
-  // A deleted file has no head side, so the base line is the only one that exists.
+  // Reported against the side that actually holds the changed lines. A deleted file has
+  // no head side at all, and a pure deletion inside a modified file has an empty head
+  // range — pointing at its head line would name code that did not change.
+  const headIsEmpty = attribution.hunk.head.count === 0;
   const snapshot: Snapshot =
-    attribution.fileDiff.change === "deleted" ? "base" : "head";
+    attribution.fileDiff.change === "deleted" || headIsEmpty ? "base" : "head";
   const range =
     snapshot === "base" ? attribution.hunk.base : attribution.hunk.head;
   return {

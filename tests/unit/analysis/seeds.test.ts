@@ -19,8 +19,14 @@ afterEach(async () => {
   }
 });
 
+interface Outcome {
+  readonly result: SeedResult;
+  /** Hunk count taken from the diff, independent of the mapper's own counter. */
+  readonly hunksInDiff: number;
+}
+
 /** Runs the whole M2 chain over a fixture: diff, enumerate, map. */
-async function seedCase(name: string): Promise<SeedResult> {
+async function seedOutcome(name: string): Promise<Outcome> {
   const repo = await createFixtureRepo(join("tests", "fixtures", name));
   cleanups.push(repo.cleanup);
   const pair = await loadSnapshotPair({
@@ -29,11 +35,21 @@ async function seedCase(name: string): Promise<SeedResult> {
     headSha: repo.headSha,
   });
   const diff = await diffCommits(repo.path, repo.baseSha, repo.headSha);
-  return mapSeeds({
-    diff,
-    base: enumerateCallables(pair.base.project.getSourceFiles(), repo.path),
-    head: enumerateCallables(pair.head.project.getSourceFiles(), repo.path),
-  });
+  return {
+    result: mapSeeds({
+      diff,
+      base: enumerateCallables(pair.base.project.getSourceFiles(), repo.path),
+      head: enumerateCallables(pair.head.project.getSourceFiles(), repo.path),
+    }),
+    hunksInDiff: diff.files.reduce(
+      (total, file) => total + file.hunks.length,
+      0,
+    ),
+  };
+}
+
+async function seedCase(name: string): Promise<SeedResult> {
+  return (await seedOutcome(name)).result;
 }
 
 /** The seeds an approved fixture freezes, as `key → change`. */
@@ -227,35 +243,21 @@ describe("hunk accounting", () => {
     "identity-static-vs-instance",
     "identity-re-export",
   ])(
-    "%s accounts for every hunk",
+    "%s accounts for every hunk in the diff",
     async (name) => {
-      const result = await seedCase(name);
+      const outcome = await seedOutcome(name);
       const { totalHunks, seedConsumed, whitespaceFiltered, gapOnly } =
-        result.accounting;
+        outcome.result.accounting;
 
-      expect(seedConsumed + whitespaceFiltered + gapOnly).toBe(totalHunks);
-      // A fixture with no hunks would satisfy the equality while proving nothing.
-      expect(totalHunks).toBeGreaterThan(0);
-    },
-    TIMEOUT_MS,
-  );
-
-  it(
-    "counts a hunk that yields both a seed and a gap once, as seed-consumed",
-    async () => {
-      // identity-collision has a collision gap and hunks in the same file. Counting the
-      // gap as a second hunk would let the total balance while a hunk went missing.
-      const result = await seedCase("identity-collision");
-
-      expect(result.gaps.length).toBeGreaterThan(0);
-      expect(
-        result.accounting.seedConsumed +
-          result.accounting.whitespaceFiltered +
-          result.accounting.gapOnly,
-      ).toBe(result.accounting.totalHunks);
-      expect(result.accounting.gapOnly).toBeLessThanOrEqual(
-        result.accounting.totalHunks,
+      // Compared against the diff, not against the mapper's own counter. Both buckets
+      // and `totalHunks` derive from the same array inside the mapper, so checking one
+      // against the other can never fail — and would not notice a hunk the mapper never
+      // attributed at all.
+      expect(totalHunks).toBe(outcome.hunksInDiff);
+      expect(seedConsumed + whitespaceFiltered + gapOnly).toBe(
+        outcome.hunksInDiff,
       );
+      expect(outcome.hunksInDiff).toBeGreaterThan(0);
     },
     TIMEOUT_MS,
   );
@@ -265,10 +267,27 @@ describe("determinism", () => {
   it(
     "sorts seeds by key and gaps by file then line",
     async () => {
-      const result = await seedCase("identity-default-exports");
+      const result = await seedCase("seed-added-deleted");
 
       const keys = result.seeds.map((seed) => seed.key);
       expect(keys).toEqual([...keys].sort());
+      // More than one seed, or the sort assertion holds vacuously.
+      expect(keys.length).toBeGreaterThan(1);
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "orders gaps by file then line",
+    async () => {
+      const result = await seedCase("seed-unmapped-change");
+      const ordered = result.gaps.map((gap) => [
+        gap.filePath,
+        gap.kind === "unmapped-change" ? gap.line : (gap.lines[0] ?? 0),
+      ]);
+
+      expect(ordered).toEqual([...ordered].sort());
+      expect(ordered.length).toBeGreaterThan(0);
     },
     TIMEOUT_MS,
   );
