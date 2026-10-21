@@ -9,6 +9,7 @@ import { enumerateCallables } from "../../../src/analysis/identity.js";
 import { mapSeeds, type SeedResult } from "../../../src/analysis/seeds.js";
 import { loadSnapshotPair } from "../../../src/project/program.js";
 import { createFixtureRepo } from "../../helpers/fixture-repo.js";
+import { expectEveryChangedLineAccounted } from "../../helpers/line-coverage.js";
 
 // Each case builds a real Git repository and loads a TypeScript program, and the cases
 // run in parallel with the rest of the suite. Individually they take a second or two, but
@@ -74,13 +75,21 @@ async function run(files: {
     headSha: repo.headSha,
   });
   const diff = await diffCommits(repo.path, repo.baseSha, repo.headSha);
+  const head = enumerateCallables(
+    pair.head.project.getSourceFiles(),
+    repo.path,
+  );
+  const result = mapSeeds({
+    diff,
+    base: enumerateCallables(pair.base.project.getSourceFiles(), repo.path),
+    head,
+  });
+
+  // Every throwaway case is held to the invariant too, not only the frozen fixtures.
+  expectEveryChangedLineAccounted(result, diff, head);
 
   return {
-    result: mapSeeds({
-      diff,
-      base: enumerateCallables(pair.base.project.getSourceFiles(), repo.path),
-      head: enumerateCallables(pair.head.project.getSourceFiles(), repo.path),
-    }),
+    result,
     hunksInDiff: diff.files.reduce(
       (total, file) => total + file.hunks.length,
       0,
