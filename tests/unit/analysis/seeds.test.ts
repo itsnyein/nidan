@@ -260,6 +260,29 @@ describe("boundary insertions and deletions", () => {
   );
 });
 
+describe("rulings not yet implemented", () => {
+  it(
+    "seed-declaration-keyword does not yet seed its declarators — pending T2.7",
+    async () => {
+      // Asserts the ruling is **still** unimplemented, rather than skipping the fixture.
+      // A skip would hide a regression and would outlive its fix silently
+      // (`decisions.md` §7a); this fails the day T2.7 lands and forces the test below to
+      // be replaced by a real assertion in the frozen-fixture list above.
+      //
+      // The keyword `let` → `var` is currently filtered as formatting, so neither
+      // declarator is seeded.
+      const result = await seedCase("seed-declaration-keyword");
+
+      expect(actualSeeds(result)).toEqual([]);
+      expect(expectedSeeds("seed-declaration-keyword")).toEqual([
+        ["src/a.ts :: :: function :: a", "modified"],
+        ["src/a.ts :: :: function :: b", "modified"],
+      ]);
+    },
+    TIMEOUT_MS,
+  );
+});
+
 describe("gaps", () => {
   it(
     "reports a hunk that maps to no callable",

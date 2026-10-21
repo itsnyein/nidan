@@ -1,0 +1,15 @@
+{
+  "description": "A top-level statement between two ambient overload signatures belongs to no callable. The overload set owns each declaration's own range, not the hull between them, so the change is an unmapped-change gap rather than text inside an unchanged callable.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [],
+    "repoWideGaps": [
+      {
+        "kind": "unmapped-change",
+        "snapshot": "head",
+        "site": { "file": "src/a.ts" },
+        "reasonCode": "no-enclosing-callable"
+      }
+    ]
+  }
+}
