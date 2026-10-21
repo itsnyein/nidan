@@ -25,19 +25,20 @@ The expectation is an `ambiguous-identity` gap, not a match. This is a real limi
 the identity model, and the honest thing is to freeze it as one: picking either `f` would
 be a guess, and a guessed identity reports on the wrong code.
 
-## The open question in this case
+## The attribution rule this case fixes
 
-The change is inside `f`, which cannot be identified — so what happens to the hunk?
+The change is inside `f`, which cannot be identified — so what accounts for the hunk?
 
-This fixture expects the **enclosing supported callable to be seeded**: the static
-`create` is reported as `modified`, and the gap records that `f` itself could not be
-resolved. The reasoning is that §8.2 already says a change inside an _unsupported_
-callable seeds the enclosing supported one, and a callable whose identity is ambiguous is
-in the same position — omen cannot identify it, so attribution moves outward.
+**The enclosing supported callable is seeded.** The static `create` is reported as
+`modified`, and the gap records that `f` itself could not be resolved. Both appear; the
+hunk counts once, against the seed.
 
-The alternative reading is that the gap alone accounts for the hunk and nothing is seeded.
-That satisfies "no hunk silently ignored" too, but it loses a real behavioural change: the
-static method genuinely returns something different now.
+The rule, approved after this case and recorded in specification §8.2: a change seeds the
+innermost supported callable **with a unique identity**. A callable whose key collides is
+skipped, attribution continues outward, and its `ambiguous-identity` gap is still
+reported.
 
-**This needs a ruling.** It is the one thing in this fixture the specification does not
-settle, and it freezes on merge.
+The two alternatives both lose something. Seeding `f` would attribute the change to one of
+two declarations arbitrarily — a guessed identity reporting on the wrong code. Reporting
+only the gap would lose a real behavioural difference: the static method genuinely returns
+something different now. Reporting both loses nothing.

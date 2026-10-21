@@ -157,6 +157,7 @@ Comment changes, including JSDoc and pragma comments, **do** count as a modifica
 
 - **Only the innermost supported callable is seeded.** When a change sits inside a nested function, the outer function is not seeded for it; the outer function's dependency shows up as a usage of the inner one.
 - A change inside an **unsupported** callable, such as an anonymous callback, seeds the nearest enclosing supported callable.
+- A change inside a callable whose [identity is ambiguous](limitations.md#duplicate-identity-keys-stop-matching) does the same: that callable is skipped, attribution continues outward to the next enclosing supported callable, and the ambiguous-identity gap is reported as well. Seeding a callable omen cannot identify would attribute the change to one of two declarations arbitrarily.
 - A hunk that maps to no callable produces an `unmapped-change` gap. This covers top-level statements, type and interface declarations, getters and setters, and any code with no enclosing callable.
 
 **No diff hunk is silently ignored.** Every hunk in a JavaScript or TypeScript file becomes a seed or a gap.
