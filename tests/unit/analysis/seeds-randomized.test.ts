@@ -23,6 +23,15 @@ const SEED = 0x5eed_1234;
 /** How many generated cases to run. Each builds a real repository, so this is modest. */
 const CASES = 40;
 
+/**
+ * The generated cases build 40 real Git repositories, which dominates local test time, so
+ * they run only when asked for. **CI always asks** — see the guard below.
+ *
+ * Opt-in rather than opt-out: a developer who has never heard of this flag gets a fast
+ * suite, and the one place that must never skip it is the one place that sets it.
+ */
+const RANDOMIZED = process.env["OMEN_RANDOMIZED"] === "1";
+
 const cleanups: Array<() => Promise<void>> = [];
 
 afterEach(async () => {
@@ -227,37 +236,65 @@ async function runCase(generated: Generated): Promise<void> {
   expectEveryChangedLineAccounted(result, diff, head);
 }
 
-describe("the line-level invariant holds for generated cases", () => {
-  it(
-    `holds for ${String(CASES)} cases from seed 0x${SEED.toString(16)}`,
-    async () => {
-      const random = randomFrom(rng(SEED));
+describe("the randomized suite is not silently disabled", () => {
+  it("runs whenever CI runs", () => {
+    // Asserts the condition the suite actually runs under, not merely that the workflow
+    // mentions the variable: a workflow-level grep would pass while the tests skipped for
+    // some other reason. If CI ever stops setting `OMEN_RANDOMIZED=1`, this fails there
+    // and stays quiet locally.
+    //
+    // Without it, gating would be a textbook structural defect (`decisions.md` §7a): the
+    // suite could stop checking anything and still report success.
+    expect(
+      process.env["CI"] === undefined || RANDOMIZED,
+      "CI must set OMEN_RANDOMIZED=1 — the randomized suite must never silently stop running",
+    ).toBe(true);
+  });
+});
 
-      for (let index = 0; index < CASES; index += 1) {
-        const generated = generateCase(random);
-        try {
-          await runCase(generated);
-        } catch (cause) {
-          // Everything needed to reproduce, in the failure itself: re-running the suite
-          // is not a diagnosis, and a generated case that cannot be reconstructed from
-          // the output is a dead end for whoever picks this up.
-          throw new Error(
-            [
-              `Line-level invariant failed.`,
-              `  seed:  0x${SEED.toString(16)}`,
-              `  case:  ${String(index)} of ${String(CASES)}`,
-              `  edits: ${generated.description}`,
-              `  base:\n${indent(generated.base)}`,
-              `  head:\n${indent(generated.head)}`,
-            ].join("\n"),
-            { cause },
-          );
+describe.skipIf(!RANDOMIZED)(
+  "the line-level invariant holds for generated cases",
+  () => {
+    it(
+      `holds for ${String(CASES)} cases from seed 0x${SEED.toString(16)}`,
+      async () => {
+        const random = randomFrom(rng(SEED));
+
+        for (let index = 0; index < CASES; index += 1) {
+          const generated = generateCase(random);
+          try {
+            await runCase(generated);
+          } catch (cause) {
+            // Everything needed to reproduce, in the failure itself: re-running the suite
+            // is not a diagnosis, and a generated case that cannot be reconstructed from
+            // the output is a dead end for whoever picks this up.
+            throw new Error(
+              [
+                `Line-level invariant failed.`,
+                `  seed:  0x${SEED.toString(16)}`,
+                `  case:  ${String(index)} of ${String(CASES)}`,
+                `  edits: ${generated.description}`,
+                `  base:\n${indent(generated.base)}`,
+                `  head:\n${indent(generated.head)}`,
+              ].join("\n"),
+              { cause },
+            );
+          }
         }
-      }
-    },
-    TIMEOUT_MS,
-  );
+      },
+      TIMEOUT_MS,
+    );
+  },
+);
 
+function indent(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => `    | ${line}`)
+    .join("\n");
+}
+
+describe("the generator reaches the shapes it claims", () => {
   it("generates the three shapes that caused M2's silent misses", () => {
     // The generator is only worth running if it can reach the failures this task closes.
     //
@@ -301,13 +338,6 @@ describe("the line-level invariant holds for generated cases", () => {
     ]);
   });
 });
-
-function indent(text: string): string {
-  return text
-    .split("\n")
-    .map((line) => `    | ${line}`)
-    .join("\n");
-}
 
 /** Consecutive pairs of a list. */
 function pairs(items: readonly string[]): Array<[string, string]> {
