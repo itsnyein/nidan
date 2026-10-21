@@ -1,0 +1,37 @@
+{
+  "description": "A callable nested two levels deep keys with a dot-separated container chain, and the chain is what distinguishes two same-named inner functions.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/deep.ts :: Outer.run :: function :: inner",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "value-reference",
+            "resolution": { "status": "exact" },
+            "from": "src/deep.ts :: Outer :: method :: run",
+            "site": { "file": "src/deep.ts", "line": 6 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      },
+      {
+        "key": "src/deep.ts :: outer.middle :: function :: inner",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/deep.ts :: outer :: function :: middle",
+            "site": { "file": "src/deep.ts", "line": 15 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": []
+  }
+}
