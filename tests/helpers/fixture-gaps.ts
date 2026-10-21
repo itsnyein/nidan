@@ -86,6 +86,8 @@ export function recordedGaps(name: string): RecordedGap[] {
     join("tests", "fixtures", name, "expected.json"),
     "utf8",
   );
+  // Cast justified: this is the frozen record contract an `E` task approved, and every
+  // field is validated below rather than trusted. `expectedSeeds` casts the same shape.
   const parsed = JSON.parse(raw) as {
     expect?: {
       repoWideGaps?: Array<{
