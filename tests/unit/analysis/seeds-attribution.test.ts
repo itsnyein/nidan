@@ -282,6 +282,44 @@ describe("whitespace inside literals is part of the value", () => {
   );
 });
 
+describe("the formatting filter's exemption list is closed", () => {
+  // Whitespace and a trailing comma before a closing bracket, and nothing else. Each case
+  // below is something a formatter may rewrite, and each must still be a modification:
+  // every one of these tokens can change meaning somewhere, and a filter that grows by
+  // analogy stops being a filter.
+  it.each([
+    [
+      "a semicolon",
+      "export function f(): number {\n  return 1;\n}\n",
+      "export function f(): number {\n  return 1\n}\n",
+    ],
+    [
+      "quote style",
+      "export function f(): string {\n  return 'a';\n}\n",
+      'export function f(): string {\n  return "a";\n}\n',
+    ],
+    [
+      "redundant parentheses",
+      "export function f(x: number): number {\n  return (x) + 1;\n}\n",
+      "export function f(x: number): number {\n  return x + 1;\n}\n",
+    ],
+  ])(
+    "seeds a change to %s",
+    async (_label, base, head) => {
+      const outcome = await run({
+        base: { "src/a.ts": base },
+        head: { "src/a.ts": head },
+      });
+
+      expect(seedKeys(outcome.result)).toEqual([
+        "src/a.ts :: :: function :: f modified",
+      ]);
+      expect(outcome.result.accounting.formattingFiltered).toBe(0);
+    },
+    TIMEOUT_MS,
+  );
+});
+
 describe("attribution past an ambiguous identity", () => {
   it(
     "seeds the enclosing callable and still reports the collision",
