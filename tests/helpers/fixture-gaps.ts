@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { expect } from "vitest";
@@ -13,11 +13,20 @@ import type { SeedResult } from "../../src/analysis/seeds.js";
  * fail every fixture whose record is simply less specific, which is a property of the
  * record format rather than a defect. T5.2 owns full expectation matching.
  */
-interface RecordedGap {
+export interface RecordedGap {
   readonly kind: string;
   readonly snapshot: string;
   readonly file: string;
   readonly reasonCode: string;
+}
+
+/** Fixture directory names whose `expected.json` records at least one gap. */
+export function fixturesWithRecordedGaps(): string[] {
+  return readdirSync(join("tests", "fixtures"), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .filter((name) => recordedGaps(name).length > 0)
+    .sort();
 }
 
 /**
@@ -27,52 +36,111 @@ interface RecordedGap {
  * theoretical gap. During T2.5 a manual sweep found `identity-collision` producing two
  * spurious `unmapped-change` gaps against a recorded expectation of **none**, while 242
  * tests passed: the code was wrong, the fixture was right, and nothing in the suite could
- * tell the difference. It would have surfaced at T5.2 as a regression with no obvious
- * cause.
- *
- * The comparison is by **set equality**, not containment. A missing gap means omen stopped
- * reporting something it must report; a spurious one means it reports something the
- * approved expectation says it must not. Both are defects, so neither direction may be
- * relaxed — subset matching (allowed elsewhere until T5.2, `decisions.md` §10) would hide
- * exactly the spurious-gap case the sweep found.
+ * tell the difference.
  */
 export function expectGapsMatchFixture(result: SeedResult, name: string): void {
-  const expected = recordedGaps(name);
-  const actual = result.gaps
-    .map((gap) => ({
+  expectGapsEqual(
+    result.gaps.map((gap) => ({
       kind: gap.kind,
       snapshot: gap.snapshot,
       file: gap.filePath,
       reasonCode: gap.reasonCode,
-    }))
-    .map(render)
-    .sort();
-
-  expect(actual).toEqual(expected.map(render).sort());
+    })),
+    recordedGaps(name),
+    name,
+  );
 }
 
-/** The gaps a fixture's `expected.json` records. */
-function recordedGaps(name: string): RecordedGap[] {
+/**
+ * Compares two gap collections as **multisets**.
+ *
+ * Multiset, not set: emitting the same gap twice is a real defect — it was literally the
+ * `identity-collision` case, which produced two identical `unmapped-change` gaps — and
+ * collapsing duplicates would hide it. Sorting the rendered strings and comparing the
+ * arrays preserves multiplicity; converting to a `Set` anywhere here would not.
+ *
+ * Separated from file reading so both mismatch directions can be tested with synthetic
+ * inputs, including duplicate-vs-single, which no current fixture can express.
+ */
+export function expectGapsEqual(
+  actual: readonly RecordedGap[],
+  expected: readonly RecordedGap[],
+  label: string,
+): void {
+  expect(
+    actual.map(render).sort(),
+    `gaps for ${label} do not match its recorded expectation`,
+  ).toEqual(expected.map(render).sort());
+}
+
+/**
+ * The gaps a fixture's `expected.json` records.
+ *
+ * **No defaults.** A record missing `snapshot` or `site.file` is a test error naming the
+ * fixture and the field, never a value filled in here: a default would silently compare
+ * equal to whatever the code produced, making the record less strict than it looks while
+ * appearing to assert something.
+ */
+export function recordedGaps(name: string): RecordedGap[] {
   const raw = readFileSync(
     join("tests", "fixtures", name, "expected.json"),
     "utf8",
   );
   const parsed = JSON.parse(raw) as {
-    expect: {
+    expect?: {
       repoWideGaps?: Array<{
-        kind: string;
+        kind?: string;
         snapshot?: string;
         site?: { file?: string };
-        reasonCode: string;
+        reasonCode?: string;
       }>;
     };
   };
-  return (parsed.expect.repoWideGaps ?? []).map((gap) => ({
-    kind: gap.kind,
-    snapshot: gap.snapshot ?? "head",
-    file: gap.site?.file ?? "",
-    reasonCode: gap.reasonCode,
+
+  return parseRecordedGaps(parsed.expect?.repoWideGaps ?? [], name);
+}
+
+/**
+ * Validates and narrows raw recorded gaps.
+ *
+ * Exported so the "no defaults" rule can be tested with synthetic records against the
+ * **same** code path the fixture reader uses. A test that re-implemented the traversal
+ * would check a copy of the rule rather than the rule.
+ */
+export function parseRecordedGaps(
+  // `| undefined` spelled out because `exactOptionalPropertyTypes` distinguishes an
+  // absent property from one explicitly set to undefined, and a malformed record can be
+  // either.
+  raw: ReadonlyArray<{
+    kind?: string | undefined;
+    snapshot?: string | undefined;
+    site?: { file?: string | undefined } | undefined;
+    reasonCode?: string | undefined;
+  }>,
+  name: string,
+): RecordedGap[] {
+  return raw.map((gap, index) => ({
+    kind: required(gap.kind, name, index, "kind"),
+    snapshot: required(gap.snapshot, name, index, "snapshot"),
+    file: required(gap.site?.file, name, index, "site.file"),
+    reasonCode: required(gap.reasonCode, name, index, "reasonCode"),
   }));
+}
+
+function required(
+  value: string | undefined,
+  name: string,
+  index: number,
+  field: string,
+): string {
+  if (value === undefined) {
+    throw new Error(
+      `${name}: repoWideGaps[${String(index)}] is missing "${field}". ` +
+        `Recorded gaps must state every field; a default would make the record less ` +
+        `strict than it looks.`,
+    );
+  }
+  return value;
 }
 
 /** One comparable line per gap, so a mismatch reads as a diff rather than object soup. */
