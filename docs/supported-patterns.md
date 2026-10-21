@@ -147,9 +147,22 @@ A changed constructor is resolved through its class symbol, using the `construct
 
 A diff hunk that overlaps any part of a callable's full range makes that callable a candidate. The full range includes the leading JSDoc comment, decorators, the signature, and the body.
 
-### Whitespace filter
+### Formatting filter
 
-omen compares the base and head token streams of the callable with whitespace removed. If they are equal, the callable is not a seed — reformatting alone never produces results.
+omen compares the base and head token streams of the callable, ignoring exactly two
+things:
+
+- **whitespace**, and
+- **a trailing comma immediately before a closing `)`, `]`, or `}`**.
+
+If what remains is equal, the callable is not a seed — reformatting alone never produces
+results. The trailing comma is in the list because a formatter adds one when it wraps an
+argument list, so ignoring whitespace alone would make every reflow a modification.
+
+**That list is closed.** Quotes, semicolons, and parentheses stay significant even where a
+formatter may change them, because each can change meaning. An array hole also survives
+the comma rule: its comma is followed by another comma rather than by `]`, so `[1, ,]`
+with two elements and `[1,]` with one keep different signatures.
 
 Comment changes, including JSDoc and pragma comments, **do** count as a modification. They sit inside the callable's range and can carry meaning.
 

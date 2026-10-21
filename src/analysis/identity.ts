@@ -47,6 +47,14 @@ export interface Callable {
    */
   readonly startLine: number;
   readonly endLine: number;
+  /**
+   * The declaration's tokens with formatting removed, as a single string.
+   *
+   * Comparing these across snapshots is how a reformatting-only change is told from a
+   * real one. Comments are **included**: a JSDoc edit is a modification, because a
+   * comment can state a contract callers rely on.
+   */
+  readonly tokenSignature: string;
 }
 
 /** Two or more declarations in one snapshot that compute the same key. */
@@ -291,6 +299,7 @@ function build(
   const containerChain = containersOf(node);
   const span = lineSpanOf(node);
   return {
+    tokenSignature: tokenSignatureOf(node),
     key: buildKey(filePath, containerChain, kind, name, isStatic),
     filePath,
     containerChain,
@@ -368,6 +377,77 @@ function classNameOf(node: ClassDeclaration): string | undefined {
     node.getName() ??
     (node.isDefaultExport() ? ANONYMOUS_DEFAULT_NAME : undefined)
   );
+}
+
+/**
+ * The declaration's tokens, joined, with whitespace between them dropped.
+ *
+ * Tokens come from the **parsed AST**, not from re-scanning the text. A bare
+ * `ts.createScanner` has no parser context: after a `${…}` substitution it resumes in
+ * normal mode rather than scanning a template continuation, and it reads `/` as a divide
+ * operator rather than starting a regular expression. In both cases the literal's own
+ * whitespace is treated as separator and discarded, so `` `a ${x}  b` `` and
+ * `` `a ${x} b` `` — different strings — compare equal. Leaf nodes carry each literal as
+ * one token with its text intact.
+ *
+ * Comments are included, because §8.1 makes a comment edit a modification: a comment can
+ * state a contract callers rely on. Every comment is leading trivia of some token, so
+ * collecting each leaf's leading comments captures them in source order.
+ */
+function tokenSignatureOf(node: Node): string {
+  const declarations = declarationsOf(node).map((declaration) =>
+    Node.isVariableDeclaration(declaration)
+      ? enclosingStatement(declaration)
+      : declaration,
+  );
+
+  const tokens: string[] = [];
+  for (const declaration of declarations) {
+    for (const leaf of leafTokensOf(declaration)) {
+      for (const comment of leaf.getLeadingCommentRanges()) {
+        tokens.push(comment.getText());
+      }
+      tokens.push(leaf.getText());
+    }
+  }
+
+  // A separator no token can contain, so two different token sequences cannot join into
+  // the same signature.
+  return dropTrailingCommas(tokens).join("\u0000");
+}
+
+/** The declaration's leaf nodes in source order — one entry per token. */
+function leafTokensOf(declaration: Node): Node[] {
+  return declaration
+    .getDescendants()
+    .filter((descendant) => descendant.getChildCount() === 0);
+}
+
+/**
+ * Removes a comma that sits immediately before a closing bracket.
+ *
+ * §8.1's filter is formatting-only, and ignores exactly two things: whitespace, and a
+ * trailing comma immediately before a closing bracket. The comma is in the list because
+ * a formatter does not only move whitespace — wrapping an argument list adds one — and
+ * without it every reflow would be a modification, which is the one job the approved
+ * `seed-whitespace-only` fixture says the filter must do.
+ *
+ * The list is **closed**. Quotes, semicolons, and parentheses stay significant even
+ * where a formatter may change them, because each can change meaning; a filter that
+ * grows by analogy stops being a filter.
+ *
+ * A trailing comma carries no meaning in any position JavaScript allows one, so dropping
+ * it cannot hide a behavioural change. The narrowness matters: only a comma whose *next*
+ * token closes the bracket is removed, so an array hole survives — `[1, ,]` has length 2
+ * and `[1,]` has length 1, and they keep different signatures because the hole's comma is
+ * followed by another comma rather than by `]`.
+ */
+function dropTrailingCommas(tokens: readonly string[]): string[] {
+  return tokens.filter((token, index) => {
+    if (token !== ",") return true;
+    const next = tokens[index + 1];
+    return next !== ")" && next !== "]" && next !== "}";
+  });
 }
 
 /** The variable an expression is assigned to, when it is assigned directly to one. */
