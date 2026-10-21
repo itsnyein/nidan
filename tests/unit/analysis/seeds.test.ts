@@ -160,6 +160,47 @@ describe("classification against the frozen fixtures", () => {
   );
 });
 
+describe.skip("a hunk that changes a callable and text outside it", () => {
+  // §8.2 as amended 2026-10-21: a mixed hunk produces the seed **and** an
+  // `unmapped-change` gap for the lines no covered callable accounts for, and is counted
+  // once, as seed-consumed.
+  //
+  // Skipped until T2.5. Observed on `6992262`: the fixture yields the `total` seed with
+  // `gaps: []` — the `LIMIT` change gets neither a seed nor a gap, because `mapSeeds`
+  // tests its seed-consumed branch first and counts the whole hunk as consumed. This is
+  // the third M2 silent miss of the same shape, one layer out from the two T2.4 closed,
+  // and T2.5 replaces hunk-level accounting with a line-level invariant to close the
+  // class rather than the instance.
+  it(
+    "seeds the callable and gaps the uncovered line",
+    async () => {
+      const outcome = await seedOutcome("seed-mixed-hunk");
+
+      expect(actualSeeds(outcome.result)).toEqual(
+        expectedSeeds("seed-mixed-hunk"),
+      );
+      const unmapped = outcome.result.gaps.filter(
+        (gap) => gap.kind === "unmapped-change",
+      );
+      expect(unmapped).toHaveLength(1);
+      expect(unmapped[0]).toMatchObject({
+        filePath: "src/calc.ts",
+        reasonCode: "no-enclosing-callable",
+        snapshot: "head",
+        line: 1,
+      });
+      // Counted once: the gap is extra information about the hunk, not a second hunk.
+      expect(outcome.result.accounting).toMatchObject({
+        totalHunks: 1,
+        seedConsumed: 1,
+        formattingFiltered: 0,
+        gapOnly: 0,
+      });
+    },
+    TIMEOUT_MS,
+  );
+});
+
 describe("boundary insertions and deletions", () => {
   // §8.2 as amended 2026-10-21: a zero-count range is a position *between* two lines. It
   // belongs to a callable only when both adjacent lines lie inside that same callable;
