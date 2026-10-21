@@ -37,12 +37,16 @@ export type SeedGap =
     };
 
 /**
- * Proof that no diff hunk was silently ignored.
+ * Per-hunk summary of the line-level accounting.
  *
- * Every hunk in a source file lands in exactly one bucket. A hunk that produced both a
- * seed and a gap counts once, as seed-consumed — the gap is extra information about that
- * hunk, not a second hunk, and counting it twice would let the total balance while a
- * different hunk went missing.
+ * Each bucket is **derived** from how the hunk's lines were classified, not decided for
+ * the hunk as a whole: a hunk counts as seed-consumed when any of its lines is, even if
+ * others are uncovered and produce a gap. The gap is extra information about that hunk,
+ * not a second hunk.
+ *
+ * These counters are a summary, not the guarantee. The guarantee is `coverage`: a hunk
+ * can balance here while lines inside it are dropped, which is exactly what each of M2's
+ * silent misses did.
  */
 export interface HunkAccounting {
   readonly totalHunks: number;
@@ -57,6 +61,21 @@ export interface SeedResult {
   readonly gaps: readonly SeedGap[];
   readonly ignoredFileCount: number;
   readonly accounting: HunkAccounting;
+  /**
+   * How every changed line was accounted for (§8.2 as amended). Reported so the
+   * line-level invariant can be asserted from outside rather than taken on trust: the
+   * hunk counters alone cannot show that no line was dropped.
+   */
+  readonly coverage: readonly CoveredLine[];
+  /**
+   * Keys that were attributed to a change but compared equal across snapshots, so they
+   * are formatting-only rather than seeds (§8.1).
+   *
+   * Reported for the same reason as `coverage`: without it, an external check cannot
+   * tell "this callable was examined and found unchanged" from "this callable was never
+   * examined at all" — and that difference is exactly what a dropped owner looks like.
+   */
+  readonly formattingEqualKeys: readonly string[];
 }
 
 export interface MapSeedsInput {
@@ -115,18 +134,36 @@ export function mapSeeds(input: MapSeedsInput): SeedResult {
     ...collisionGaps(input.base.collisions, "base"),
   ]);
 
+  // Line-level accounting (§8.2 as amended). Each changed line is classified on its own,
+  // and the hunk buckets are derived from those classifications rather than decided for
+  // the hunk as a whole. Every M2 silent miss was a hunk counted as accounted-for while
+  // lines inside it were dropped; a per-line classification makes that shape impossible
+  // to express.
+  const lines: LineCoverage[] = [];
+  for (const attribution of attributions) {
+    lines.push(...coverageOf(attribution, input, seededKeys));
+  }
+
   let seedConsumed = 0;
   let formattingFiltered = 0;
   let gapOnly = 0;
   for (const attribution of attributions) {
-    const keys = [...attribution.keys];
-    if (keys.some((key) => seededKeys.has(key))) {
-      seedConsumed += 1;
-    } else if (isFormattingOnly(attribution, input, filteredKeys)) {
-      formattingFiltered += 1;
-    } else {
-      gapOnly += 1;
-      gaps.push(unmappedGap(attribution));
+    const own = lines.filter((line) => line.attribution === attribution);
+    const uncovered = own.filter((line) => line.bucket === "uncovered");
+
+    // A hunk that both seeds and leaves lines uncovered counts once, as seed-consumed:
+    // the gap is extra information about that hunk, not a second hunk.
+    if (own.some((line) => line.bucket === "seeded")) seedConsumed += 1;
+    else if (uncovered.length === 0) formattingFiltered += 1;
+    else gapOnly += 1;
+
+    // One gap per **contiguous run** of uncovered lines, not one per hunk. A hunk can
+    // leave two separate regions unaccounted for — a top-level line above a callable and
+    // another below it — and a single gap names only one of them, leaving the other
+    // changed but unreported. That is the same silent miss this task exists to close,
+    // surviving at a finer grain than the hunk.
+    for (const run of uncoveredRuns(attribution, uncovered)) {
+      gaps.push(unmappedGap(attribution, run));
     }
   }
 
@@ -140,7 +177,82 @@ export function mapSeeds(input: MapSeedsInput): SeedResult {
       formattingFiltered,
       gapOnly,
     },
+    formattingEqualKeys: [...filteredKeys].sort(),
+    coverage: lines.map((line) => ({
+      snapshot: line.snapshot,
+      filePath: line.filePath,
+      line: line.line,
+      bucket: line.bucket,
+    })),
   };
+}
+
+/**
+ * How one changed line is accounted for.
+ *
+ * `seeded` and `formatting` mean the line lies inside a callable that was attributed to
+ * it — seeded, or equal across snapshots. `uncovered` means no such callable exists, so
+ * the line must be reported as a gap.
+ */
+export type CoverageBucket =
+  "seeded" | "formatting" | "ambiguous" | "uncovered";
+
+export interface CoveredLine {
+  readonly snapshot: Snapshot;
+  readonly filePath: string;
+  readonly line: number;
+  readonly bucket: CoverageBucket;
+}
+
+interface LineCoverage extends CoveredLine {
+  readonly attribution: Attribution;
+}
+
+/**
+ * Classifies every changed line of a hunk.
+ *
+ * Only sides that hold changed **text** produce lines: a pure insertion has none on the
+ * base side, a pure deletion none on the head side. A zero-count range still decides
+ * *ownership* for the opposite side's lines, through `attributeHunk`, but contributes no
+ * line of its own because no text exists there to account for.
+ *
+ * The bucket comes from the same attribution the seeding path used, so coverage and
+ * seeding cannot disagree. An invariant computed by a second, independent walk could
+ * agree with the specification while diverging from the code — a new source of silent
+ * error rather than a check on the existing one.
+ */
+function coverageOf(
+  attribution: Attribution,
+  input: MapSeedsInput,
+  seededKeys: ReadonlySet<string>,
+): LineCoverage[] {
+  const sides: Array<[Snapshot, CallableIndex, Hunk["base"]]> = [];
+  if (attribution.fileDiff.change !== "added") {
+    sides.push(["base", input.base, attribution.hunk.base]);
+  }
+  if (attribution.fileDiff.change !== "deleted") {
+    sides.push(["head", input.head, attribution.hunk.head]);
+  }
+
+  const covered: LineCoverage[] = [];
+  for (const [snapshot, index, range] of sides) {
+    const inFile = index.callables.filter(
+      (callable) => callable.filePath === attribution.fileDiff.path,
+    );
+    for (const line of linesOf(range)) {
+      const owners = innermostOwners(inFile, line)
+        .map((owner) => owner.key)
+        .filter((key) => attribution.keys.has(key));
+      covered.push({
+        attribution,
+        snapshot,
+        filePath: attribution.fileDiff.path,
+        line,
+        bucket: bucketFor(owners, seededKeys, index, attribution, line),
+      });
+    }
+  }
+  return covered;
 }
 
 function indexByKey(index: CallableIndex): Map<string, Callable> {
@@ -249,57 +361,6 @@ function linesOf(range: Hunk["base"]): number[] {
 }
 
 /**
- * Whether a hunk may be counted as formatting-filtered (§8.1, §8.2 as amended).
- *
- * The bucket requires that **the hunk's own changed text** is formatting-only — not
- * merely that the callables it was attributed to happen to compare equal. Without this,
- * a hunk lands in the bucket because of what it was attributed *to*, so a misattribution
- * of any kind lets substantive text vanish from the report with the accounting balanced.
- *
- * "Formatting-only" is judged by reusing the token-signature comparison rather than
- * re-normalizing the hunk's raw text: a signature comparison already *is* §8.1 over
- * exactly the text inside a callable, and normalizing raw lines would treat whitespace
- * inside a string, template substitution, or regex literal as insignificant when it is
- * part of the program's value. So every changed line must lie inside a callable that was
- * attributed to this hunk **and** compared equal across snapshots.
- *
- * Only sides that actually hold changed text are examined: for a pure insertion that is
- * the head side alone, and for a pure deletion the base side alone.
- */
-function isFormattingOnly(
-  attribution: Attribution,
-  input: MapSeedsInput,
-  filteredKeys: ReadonlySet<string>,
-): boolean {
-  const sides: Array<[CallableIndex, Hunk["base"]]> = [];
-  if (attribution.fileDiff.change !== "added") {
-    sides.push([input.base, attribution.hunk.base]);
-  }
-  if (attribution.fileDiff.change !== "deleted") {
-    sides.push([input.head, attribution.hunk.head]);
-  }
-
-  let changedLineCount = 0;
-  for (const [index, range] of sides) {
-    const inFile = index.callables.filter(
-      (callable) => callable.filePath === attribution.fileDiff.path,
-    );
-    for (const line of linesOf(range)) {
-      changedLineCount += 1;
-      const covered = innermostOwners(inFile, line).some(
-        (owner) =>
-          attribution.keys.has(owner.key) && filteredKeys.has(owner.key),
-      );
-      if (!covered) return false;
-    }
-  }
-
-  // A hunk with no changed text on either examined side has nothing to call
-  // formatting-only; it belongs in the gap bucket, where it is reported.
-  return changedLineCount > 0;
-}
-
-/**
  * The innermost callables whose line span contains the line, by position containment.
  *
  * Plural, because one line can hold **siblings**: `const a = () => 1, b = () => 2;`
@@ -322,6 +383,32 @@ function innermostOwners(
     (candidate) =>
       !containing.some((other) => isStrictlyInside(other, candidate)),
   );
+}
+
+/**
+ * Which bucket a changed line falls in.
+ *
+ * A line with no unique-identity owner is not automatically unaccounted for: if it lies
+ * inside a callable whose key collides, the `ambiguous-identity` gap already describes
+ * that code (§8.2, pre-ruling 3 of 2026-10-21). Reporting it again as an unmapped change
+ * would claim omen could not map something it mapped and then declined to seed.
+ */
+function bucketFor(
+  owners: readonly string[],
+  seededKeys: ReadonlySet<string>,
+  index: CallableIndex,
+  attribution: Attribution,
+  line: number,
+): CoverageBucket {
+  if (owners.length > 0) {
+    return owners.some((key) => seededKeys.has(key)) ? "seeded" : "formatting";
+  }
+  const insideCollision = index.collisions.some(
+    (collision) =>
+      collision.filePath === attribution.fileDiff.path &&
+      collision.spans.some((span) => line >= span.start && line <= span.end),
+  );
+  return insideCollision ? "ambiguous" : "uncovered";
 }
 
 /** Whether `inner` sits strictly within `outer`, by character position. */
@@ -402,20 +489,74 @@ function dedupeCollisions(gaps: readonly SeedGap[]): SeedGap[] {
   return unique;
 }
 
-function unmappedGap(attribution: Attribution): SeedGap {
-  // Reported against the side that actually holds the changed lines. A deleted file has
-  // no head side at all, and a pure deletion inside a modified file has an empty head
-  // range — pointing at its head line would name code that did not change.
-  const headIsEmpty = attribution.hunk.head.count === 0;
-  const snapshot: Snapshot =
-    attribution.fileDiff.change === "deleted" || headIsEmpty ? "base" : "head";
-  const range =
-    snapshot === "base" ? attribution.hunk.base : attribution.hunk.head;
+function uncoveredRuns(
+  attribution: Attribution,
+  uncovered: readonly CoveredLine[],
+): CoveredLine[][] {
+  if (uncovered.length === 0) return [];
+
+  // §8.2 as ruled 2026-10-21: report every head-side uncovered run, plus every base-side
+  // run that **no head-side gap accounts for**.
+  //
+  // A base line is accounted for only when it is the *replaced counterpart* of an
+  // uncovered head line: Git lists a hunk's two sides in parallel, so the base line at
+  // offset `n` was replaced by the head line at offset `n`. If that counterpart is itself
+  // uncovered, the head gap already names the edit and a base gap would name it twice.
+  //
+  // A base line with no counterpart — offset beyond the head range, i.e. deleted text —
+  // is never accounted for by a head gap, because there is no head line to carry it.
+  // Those always get a base-side gap; skipping them is how a statement deleted beside a
+  // modified callable came to be reported by nothing at all.
+  const uncoveredHeadLines = new Set(
+    uncovered
+      .filter((line) => line.snapshot === "head")
+      .map((line) => line.line),
+  );
+
+  const reported = uncovered.filter((line) => {
+    if (line.snapshot === "head") return true;
+    const offset = line.line - attribution.hunk.base.start;
+    const hasCounterpart = offset >= 0 && offset < attribution.hunk.head.count;
+    if (!hasCounterpart) return true;
+    return !uncoveredHeadLines.has(attribution.hunk.head.start + offset);
+  });
+
+  // Runs rather than one gap per hunk: a hunk can leave two separate regions unaccounted
+  // for, and a single gap names only the first. Grouped per snapshot, since a base run
+  // and a head run are different reports.
+  const runs: CoveredLine[][] = [];
+  for (const snapshot of ["base", "head"] as const) {
+    const ordered = reported
+      .filter((line) => line.snapshot === snapshot)
+      .sort((left, right) => left.line - right.line);
+    let current: CoveredLine[] | undefined;
+    for (const line of ordered) {
+      if (
+        current !== undefined &&
+        current[current.length - 1]?.line === line.line - 1
+      ) {
+        current.push(line);
+      } else {
+        current = [line];
+        runs.push(current);
+      }
+    }
+  }
+  return runs;
+}
+
+function unmappedGap(
+  attribution: Attribution,
+  run: readonly CoveredLine[],
+): SeedGap {
+  // The run's first line, so the gap names where the unaccounted change begins.
+  const first = run[0];
+  if (first === undefined) throw new Error("unmappedGap: empty run");
   return {
     kind: "unmapped-change",
-    snapshot,
+    snapshot: first.snapshot,
     filePath: attribution.fileDiff.path,
-    line: range.start,
+    line: first.line,
     reasonCode: "no-enclosing-callable",
   };
 }

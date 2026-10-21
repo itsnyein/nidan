@@ -9,6 +9,7 @@ import { enumerateCallables } from "../../../src/analysis/identity.js";
 import { mapSeeds, type SeedResult } from "../../../src/analysis/seeds.js";
 import { loadSnapshotPair } from "../../../src/project/program.js";
 import { createFixtureRepo } from "../../helpers/fixture-repo.js";
+import { expectEveryChangedLineAccounted } from "../../helpers/line-coverage.js";
 
 // Each case builds a real Git repository and loads a TypeScript program, and the cases
 // run in parallel with the rest of the suite. Individually they take a second or two, but
@@ -74,13 +75,21 @@ async function run(files: {
     headSha: repo.headSha,
   });
   const diff = await diffCommits(repo.path, repo.baseSha, repo.headSha);
+  const head = enumerateCallables(
+    pair.head.project.getSourceFiles(),
+    repo.path,
+  );
+  const result = mapSeeds({
+    diff,
+    base: enumerateCallables(pair.base.project.getSourceFiles(), repo.path),
+    head,
+  });
+
+  // Every throwaway case is held to the invariant too, not only the frozen fixtures.
+  expectEveryChangedLineAccounted(result, diff, head);
 
   return {
-    result: mapSeeds({
-      diff,
-      base: enumerateCallables(pair.base.project.getSourceFiles(), repo.path),
-      head: enumerateCallables(pair.head.project.getSourceFiles(), repo.path),
-    }),
+    result,
     hunksInDiff: diff.files.reduce(
       (total, file) => total + file.hunks.length,
       0,
@@ -166,6 +175,170 @@ describe("the boundary rule, isolated from the formatting guard", () => {
         gapOnly: 1,
       });
       expectAccountsForEveryHunk(outcome);
+    },
+    TIMEOUT_MS,
+  );
+});
+
+describe("a statement deleted beside a modified callable", () => {
+  it(
+    "reports the deletion on the base side, not only the head edit",
+    async () => {
+      // The case that forced the one-gap-per-edit rule to be refined. `A` is modified and
+      // `B` is deleted, adjacent to a changed function, so Git emits one hunk
+      // (`@@ -1,3 +1,2 @@`, asserted below).
+      //
+      // `A`'s base line is the replaced counterpart of an uncovered head line, so the
+      // head gap names it and a base gap would duplicate it. `B`'s base line has **no**
+      // counterpart — the head range is shorter — so nothing on the head side can carry
+      // it. Reporting head-side runs only, as the first wording of the rule said, left
+      // the deletion named by nothing at all.
+      const base = [
+        "export const A = 1;",
+        "export const B = 2;",
+        "export function f(): number { return 1; }",
+        "",
+      ].join("\n");
+      const head = [
+        "export const A = 9;",
+        "export function f(): number { return 2; }",
+        "",
+      ].join("\n");
+      const outcome = await run({
+        base: { "src/a.ts": base },
+        head: { "src/a.ts": head },
+      });
+
+      expect(outcome.hunksInDiff).toBe(1);
+      expect(seedKeys(outcome.result)).toEqual([
+        "src/a.ts :: :: function :: f modified",
+      ]);
+
+      const unmapped = outcome.result.gaps
+        .filter((gap) => gap.kind === "unmapped-change")
+        .map((gap) => `${gap.snapshot}:${String("line" in gap ? gap.line : 0)}`)
+        .sort();
+      // head:1 names A's edit; base:2 names B's deletion, which has no head counterpart.
+      expect(unmapped).toEqual(["base:2", "head:1"]);
+    },
+    TIMEOUT_MS,
+  );
+});
+
+describe("a hunk with two separate uncovered regions", () => {
+  it(
+    "reports a gap for each region, not just the first",
+    async () => {
+      // Found by the T2.5 reviewer against unmutated code. One hunk leaves two separate
+      // regions unaccounted for — a top-level line above the callable and another below
+      // it. Emitting a single gap per hunk names only the first, so the `OTHER` change is
+      // real, unreported, and the accounting still balances: this task's own failure mode
+      // surviving at a finer grain than the hunk.
+      //
+      // Why this input has the claimed shape: all three lines are edited and adjacent, so
+      // Git emits one hunk (`@@ -1,3 +1,3 @@`, asserted below). `total` is written on a
+      // single line so that the covered line sits *between* the two uncovered ones —
+      // split across lines it would merge the regions into one run and the case would
+      // vanish.
+      const base = [
+        "export const LIMIT = 1;",
+        "export function total(): number { return 1; }",
+        "export const OTHER = 1;",
+        "",
+      ].join("\n");
+      const head = [
+        "export const LIMIT = 2;",
+        "export function total(): number { return 9; }",
+        "export const OTHER = 2;",
+        "",
+      ].join("\n");
+      const outcome = await run({
+        base: { "src/a.ts": base },
+        head: { "src/a.ts": head },
+      });
+
+      expect(outcome.hunksInDiff).toBe(1);
+      expect(seedKeys(outcome.result)).toEqual([
+        "src/a.ts :: :: function :: total modified",
+      ]);
+
+      const unmapped = outcome.result.gaps
+        .filter((gap) => gap.kind === "unmapped-change")
+        .map((gap) => `${gap.snapshot}:${String(gap.line)}`)
+        .sort();
+      // One gap per edit: each base line here is the replaced counterpart of an
+      // uncovered head line, so the head gaps already name both edits and base gaps
+      // would name them twice.
+      expect(unmapped).toEqual(["head:1", "head:3"]);
+      // Counted once, as seed-consumed: two gaps about one hunk are not two hunks.
+      expect(outcome.result.accounting).toMatchObject({
+        totalHunks: 1,
+        seedConsumed: 1,
+        gapOnly: 0,
+      });
+    },
+    TIMEOUT_MS,
+  );
+});
+
+describe("a boundary position must not seed a neighbour it is outside", () => {
+  it(
+    "does not seed an unchanged nested callable whose container was renamed",
+    async () => {
+      // The case that proves `boundaryOwners` is load-bearing. Found by the T2.5
+      // reviewer after I wrongly reported the rule as unreachable: I only looked for
+      // neighbours whose *text* changed, and the distinguishing case is a neighbour
+      // whose **key** changes while its text does not.
+      //
+      // Why this input has the claimed shape: renaming `C` to `C2` re-keys `B` from
+      // `C.m :: function :: B` to `C2.m :: function :: B`, so base `B` has no head
+      // counterpart and would classify as `deleted` if anything attributed to it. The
+      // inserted line sits between `const x` (innermost owner `m`) and `B`'s declaration
+      // (innermost owner `B`), so the two adjacent lines have **different** innermost
+      // owners — the condition the boundary rule turns on. Verified as three hunks under
+      // the pinned flags, the middle one `@@ -5,0 +6 @@`, a true zero-count range.
+      //
+      // Taking the union of both neighbours instead attributes the insertion to `B` and
+      // emits a spurious `B deleted`: an unchanged callable reported as deleted because
+      // a line was inserted *outside* it.
+      const base = [
+        "export const TOP = 1;",
+        "",
+        "export class C {",
+        "  m(): number {",
+        "    const x = 1;",
+        "    function B(): number { return 2; }",
+        "    return x + B();",
+        "  }",
+        "}",
+        "",
+      ].join("\n");
+      const head = [
+        "export const TOP = 1;",
+        "",
+        "export class C2 {",
+        "  m(): number {",
+        "    const x = 1;",
+        "    const INS = 0;",
+        "    function B(): number { return 2; }",
+        "    return x + B() + INS;",
+        "  }",
+        "}",
+        "",
+      ].join("\n");
+      const outcome = await run({
+        base: { "src/a.ts": base },
+        head: { "src/a.ts": head },
+      });
+
+      expect(outcome.hunksInDiff).toBe(3);
+      // `B` is untouched in both snapshots; only its container's name changed.
+      expect(seedKeys(outcome.result)).not.toContain(
+        "src/a.ts :: C.m :: function :: B deleted",
+      );
+      expect(seedKeys(outcome.result)).not.toContain(
+        "src/a.ts :: C2.m :: function :: B added",
+      );
     },
     TIMEOUT_MS,
   );
@@ -790,6 +963,7 @@ describe("hunks with nothing to attribute to", () => {
       });
 
       expect(outcome.result.seeds).toEqual([]);
+      // One gap: the base line is the replaced counterpart of the uncovered head line.
       expect(outcome.result.gaps.map((gap) => gap.kind)).toEqual([
         "unmapped-change",
       ]);

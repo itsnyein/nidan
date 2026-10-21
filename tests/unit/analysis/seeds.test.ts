@@ -8,6 +8,7 @@ import { enumerateCallables } from "../../../src/analysis/identity.js";
 import { mapSeeds, type SeedResult } from "../../../src/analysis/seeds.js";
 import { loadSnapshotPair } from "../../../src/project/program.js";
 import { createFixtureRepo } from "../../helpers/fixture-repo.js";
+import { expectEveryChangedLineAccounted } from "../../helpers/line-coverage.js";
 
 const TIMEOUT_MS = 60_000;
 
@@ -35,12 +36,23 @@ async function seedOutcome(name: string): Promise<Outcome> {
     headSha: repo.headSha,
   });
   const diff = await diffCommits(repo.path, repo.baseSha, repo.headSha);
+  const head = enumerateCallables(
+    pair.head.project.getSourceFiles(),
+    repo.path,
+  );
+  const result = mapSeeds({
+    diff,
+    base: enumerateCallables(pair.base.project.getSourceFiles(), repo.path),
+    head,
+  });
+
+  // Asserted here rather than in each test, so **every** fixture the suite exercises is
+  // held to the line-level invariant — including ones added later, whose authors need not
+  // remember to ask for it.
+  expectEveryChangedLineAccounted(result, diff, head);
+
   return {
-    result: mapSeeds({
-      diff,
-      base: enumerateCallables(pair.base.project.getSourceFiles(), repo.path),
-      head: enumerateCallables(pair.head.project.getSourceFiles(), repo.path),
-    }),
+    result,
     hunksInDiff: diff.files.reduce(
       (total, file) => total + file.hunks.length,
       0,
@@ -160,17 +172,15 @@ describe("classification against the frozen fixtures", () => {
   );
 });
 
-describe.skip("a hunk that changes a callable and text outside it", () => {
+describe("a hunk that changes a callable and text outside it", () => {
   // §8.2 as amended 2026-10-21: a mixed hunk produces the seed **and** an
   // `unmapped-change` gap for the lines no covered callable accounts for, and is counted
   // once, as seed-consumed.
   //
-  // Skipped until T2.5. Observed on `6992262`: the fixture yields the `total` seed with
-  // `gaps: []` — the `LIMIT` change gets neither a seed nor a gap, because `mapSeeds`
-  // tests its seed-consumed branch first and counts the whole hunk as consumed. This is
-  // the third M2 silent miss of the same shape, one layer out from the two T2.4 closed,
-  // and T2.5 replaces hunk-level accounting with a line-level invariant to close the
-  // class rather than the instance.
+  // Before T2.5, on `6992262`, this fixture yielded the `total` seed with `gaps: []` —
+  // the `LIMIT` change got neither a seed nor a gap, because `mapSeeds` tested its
+  // seed-consumed branch first and counted the whole hunk as consumed. That was the third
+  // M2 silent miss of the same shape, one layer out from the two T2.4 closed.
   it(
     "seeds the callable and gaps the uncovered line",
     async () => {
@@ -179,6 +189,9 @@ describe.skip("a hunk that changes a callable and text outside it", () => {
       expect(actualSeeds(outcome.result)).toEqual(
         expectedSeeds("seed-mixed-hunk"),
       );
+      // One gap. `LIMIT` is uncovered on both sides, but the base line is the replaced
+      // counterpart of the uncovered head line, so the head gap already names the edit
+      // (§8.2 as ruled 2026-10-21). A base gap would name the same edit twice.
       const unmapped = outcome.result.gaps.filter(
         (gap) => gap.kind === "unmapped-change",
       );

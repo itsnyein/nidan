@@ -69,6 +69,18 @@ export interface IdentityCollision {
   readonly filePath: string;
   /** 1-based start line of each colliding declaration, in source order. */
   readonly lines: readonly number[];
+  /**
+   * The full line span of each colliding declaration.
+   *
+   * Needed because a change *inside* a colliding callable is accounted for by that
+   * callable's `ambiguous-identity` gap (§8.2 as ruled 2026-10-21). Start lines alone
+   * cannot answer "does this changed line fall inside one of them", so reporting such a
+   * line as an unmapped change would contradict the gap already describing it.
+   */
+  readonly spans: ReadonlyArray<{
+    readonly start: number;
+    readonly end: number;
+  }>;
 }
 
 export interface CallableIndex {
@@ -145,6 +157,12 @@ function groupByKey(found: readonly Callable[]): CallableIndex {
       key,
       filePath: first.filePath,
       lines: group.map((callable) => callable.startLine).sort((a, b) => a - b),
+      spans: group
+        .map((callable) => ({
+          start: callable.startLine,
+          end: callable.endLine,
+        }))
+        .sort((left, right) => left.start - right.start),
     });
   }
 
