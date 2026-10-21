@@ -1,9 +1,4 @@
-import {
-  overlapsSpan,
-  type DiffResult,
-  type FileDiff,
-  type Hunk,
-} from "./diff.js";
+import type { DiffResult, FileDiff, Hunk } from "./diff.js";
 import type { Callable, CallableIndex, IdentityCollision } from "./identity.js";
 
 /** Which snapshot a seed's declaration comes from (§5.1). */
@@ -168,12 +163,12 @@ function attributeHunk(
   const keys = new Set<string>();
 
   if (fileDiff.change !== "added") {
-    for (const key of innermostUniqueKeys(base, fileDiff.path, hunk.base)) {
+    for (const key of attributedKeys(base, fileDiff.path, hunk.base)) {
       keys.add(key);
     }
   }
   if (fileDiff.change !== "deleted") {
-    for (const key of innermostUniqueKeys(head, fileDiff.path, hunk.head)) {
+    for (const key of attributedKeys(head, fileDiff.path, hunk.head)) {
       keys.add(key);
     }
   }
@@ -182,48 +177,86 @@ function attributeHunk(
 }
 
 /**
- * The innermost callables overlapping the range whose identity is unique.
+ * The callables a changed range is attributed to.
  *
- * A **set**, not one. A single hunk routinely covers several callables: Git emits an
- * added or deleted file as one hunk spanning the whole file, and an edit can straddle two
- * siblings. Returning only one would leave the others neither seeded nor reported —
- * silently ignored, which §8.2 forbids.
+ * Attribution is **per changed line**, not per hunk. A single hunk routinely covers a
+ * mixture: a statement belonging to an outer function and a nested function beneath it.
+ * Attributing the hunk as a whole to one owner discards the other change — it gets
+ * neither a seed nor a gap, while the accounting still balances, which is the failure
+ * mode hunk accounting exists to catch.
  *
- * "Innermost" is containment, not smallest span. A callable is kept unless another
- * overlapping callable sits strictly inside it, because that inner one is the nearer
- * attribution (§8.2). Two siblings contain each other not at all, so both are kept.
+ * For each line, the owners are the innermost callables containing it — plural, because
+ * one line can declare siblings. "Innermost" is **containment by character position**,
+ * not by line span: an outer and an inner callable written on one line share a line span,
+ * and a line-based test would call them siblings and seed both.
  *
- * Callables whose identity collides are absent from `index.callables` already, so
- * attribution passes over them to the next enclosing candidate and their gap is reported
- * separately (§8.2 as amended).
+ * Callables whose identity collides are absent from `index.callables`, so attribution
+ * passes over them to the next enclosing candidate and their gap is reported separately
+ * (§8.2 as amended).
  */
-function innermostUniqueKeys(
+function attributedKeys(
   index: CallableIndex,
   filePath: string,
   range: Hunk["base"],
 ): string[] {
-  const overlapping = index.callables.filter(
-    (callable) =>
-      callable.filePath === filePath &&
-      overlapsSpan(range, callable.startLine, callable.endLine),
+  const inFile = index.callables.filter(
+    (callable) => callable.filePath === filePath,
   );
+  if (inFile.length === 0) return [];
 
-  return overlapping
-    .filter(
-      (candidate) =>
-        !overlapping.some(
-          (other) => other !== candidate && isStrictlyInside(other, candidate),
-        ),
-    )
-    .map((callable) => callable.key);
+  const keys = new Set<string>();
+  for (const line of changedLines(range)) {
+    for (const owner of innermostOwners(inFile, line)) keys.add(owner.key);
+  }
+  return [...keys];
 }
 
-/** Whether `inner` sits strictly within `outer`'s line span. */
+/**
+ * The lines a range touches.
+ *
+ * A zero-count range is an insertion point rather than a span: Git reports it as the line
+ * the new content follows. Both the line before and the line after are touched, because
+ * inserting between two lines of a function body changed that function, and a callable
+ * may start on either side of the insertion.
+ */
+function changedLines(range: Hunk["base"]): number[] {
+  if (range.count === 0) {
+    return range.start === 0 ? [1] : [range.start, range.start + 1];
+  }
+  return Array.from({ length: range.count }, (_, index) => range.start + index);
+}
+
+/**
+ * The innermost callables whose line span contains the line, by position containment.
+ *
+ * Plural, because one line can hold **siblings**: `const a = () => 1, b = () => 2;`
+ * declares two callables on one line, and so do two one-line function declarations.
+ * Siblings are not inside one another, so reducing the line to a single owner would pick
+ * one and silently discard the other — no seed, no gap, accounting still balanced.
+ *
+ * A candidate survives when no other containing callable is strictly inside it: that
+ * drops enclosing callables while keeping every minimal one.
+ */
+function innermostOwners(
+  callables: readonly Callable[],
+  line: number,
+): Callable[] {
+  const containing = callables.filter(
+    (callable) => line >= callable.startLine && line <= callable.endLine,
+  );
+
+  return containing.filter(
+    (candidate) =>
+      !containing.some((other) => isStrictlyInside(other, candidate)),
+  );
+}
+
+/** Whether `inner` sits strictly within `outer`, by character position. */
 function isStrictlyInside(inner: Callable, outer: Callable): boolean {
   const within =
-    inner.startLine >= outer.startLine && inner.endLine <= outer.endLine;
+    inner.startPos >= outer.startPos && inner.endPos <= outer.endPos;
   const identical =
-    inner.startLine === outer.startLine && inner.endLine === outer.endLine;
+    inner.startPos === outer.startPos && inner.endPos === outer.endPos;
   return within && !identical;
 }
 

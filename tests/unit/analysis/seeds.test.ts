@@ -196,10 +196,13 @@ describe("gaps", () => {
 
 describe("attribution", () => {
   it(
-    "seeds the enclosing callable when the change sits in an anonymous callback",
+    "seeds the changed function and not the untouched file that calls it",
     async () => {
-      // overlay-basic changes `formatRow`, called from inside `rows.map((row) => ...)`.
-      // The arrow is unsupported, so the enclosing supported callable is the attribution.
+      // overlay-basic changes the body of top-level `formatRow`; another file calls it
+      // from inside `rows.map(...)` but does not itself change. That makes this a test
+      // of cross-file restraint, not of callback attribution — the caller is unchanged,
+      // so no arrow is involved in any hunk. Attribution into an anonymous callback is
+      // tested directly in seeds-attribution.test.ts, on a hunk inside the arrow.
       const result = await seedCase("overlay-basic");
 
       expect(actualSeeds(result)).toEqual([

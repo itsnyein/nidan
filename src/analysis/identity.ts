@@ -48,6 +48,12 @@ export interface Callable {
   readonly startLine: number;
   readonly endLine: number;
   /**
+   * Character offsets of the same span. Lines cannot express nesting when an outer and
+   * an inner callable share one line; positions always can.
+   */
+  readonly startPos: number;
+  readonly endPos: number;
+  /**
    * The declaration's tokens with formatting removed, as a single string.
    *
    * Comparing these across snapshots is how a reformatting-only change is told from a
@@ -91,11 +97,12 @@ export function enumerateCallables(
     // Declaration files are loaded so types resolve, but are never seeds (§7.1).
     if (sourceFile.isDeclarationFile()) continue;
     if (!isWithin(root, absolute)) continue;
-    // `node_modules` sits inside the repository root, so the check above does not
-    // exclude it. Dependency resolution pulls a package's own `.js` into the program,
-    // and third-party code must never become a seed or raise a gap about itself.
-    if (hasNodeModulesSegment(absolute)) continue;
     const filePath = absolute.slice(root.length + 1);
+    // Tested on the **repository-relative** path. Testing the absolute one would exclude
+    // every file in a project that merely happens to be checked out beneath a directory
+    // called `node_modules` — the whole project would silently vanish from enumeration,
+    // and results would depend on where the repository sits on disk.
+    if (hasNodeModulesSegment(filePath)) continue;
 
     for (const node of sourceFile.getDescendants()) {
       const callable = toCallable(node, filePath);
@@ -106,8 +113,8 @@ export function enumerateCallables(
   return groupByKey(found);
 }
 
-function hasNodeModulesSegment(absolutePath: string): boolean {
-  return absolutePath.split("/").includes(NODE_MODULES_SEGMENT);
+function hasNodeModulesSegment(relativePath: string): boolean {
+  return relativePath.split("/").includes(NODE_MODULES_SEGMENT);
 }
 
 /**
@@ -277,16 +284,23 @@ function fromExportAssignment(
   node: ExportAssignment,
   filePath: string,
 ): Callable | undefined {
-  if (node.isExportEquals()) return undefined;
-  const expression = node.getExpression();
-  if (
-    !Node.isArrowFunction(expression) &&
-    !Node.isFunctionExpression(expression)
-  ) {
-    // `export default foo` is an alias: the identity stays with `foo`'s declaration.
-    return undefined;
-  }
+  if (!isDefaultExportedFunction(node)) return undefined;
   return build(node, filePath, "function", ANONYMOUS_DEFAULT_NAME, false);
+}
+
+/**
+ * Whether an export assignment declares a function inline, rather than aliasing one.
+ *
+ * `export default foo` is an alias: the identity stays with `foo`'s own declaration.
+ * Shared by the callable and container paths so the two cannot disagree about what counts
+ * as a default-exported function.
+ */
+function isDefaultExportedFunction(node: ExportAssignment): boolean {
+  if (node.isExportEquals()) return false;
+  const expression = node.getExpression();
+  return (
+    Node.isArrowFunction(expression) || Node.isFunctionExpression(expression)
+  );
 }
 
 function build(
@@ -308,6 +322,8 @@ function build(
     isStatic,
     startLine: span.start,
     endLine: span.end,
+    startPos: span.startPos,
+    endPos: span.endPos,
   };
 }
 
@@ -361,6 +377,12 @@ function containerNameOf(node: Node): string | undefined {
   }
   if (Node.isMethodDeclaration(node)) return node.getName();
   if (Node.isConstructorDeclaration(node)) return "constructor";
+  // The same callable `fromExportAssignment` names `default`. Without this, rewriting
+  // `export default function () {}` as `export default () => {}` silently changes every
+  // nested callable's key — and can collide them with a top-level namesake.
+  if (Node.isExportAssignment(node)) {
+    return isDefaultExportedFunction(node) ? ANONYMOUS_DEFAULT_NAME : undefined;
+  }
   if (Node.isVariableDeclaration(node)) {
     const initializer = node.getInitializer();
     const holdsFunction =
@@ -391,8 +413,9 @@ function classNameOf(node: ClassDeclaration): string | undefined {
  * one token with its text intact.
  *
  * Comments are included, because §8.1 makes a comment edit a modification: a comment can
- * state a contract callers rely on. Every comment is leading trivia of some token, so
- * collecting each leaf's leading comments captures them in source order.
+ * state a contract callers rely on. Leading trivia alone is not enough — a comment
+ * following code on the same line trails its token and leads nothing — so both ranges are
+ * collected and deduplicated by position.
  */
 function tokenSignatureOf(node: Node): string {
   const declarations = declarationsOf(node).map((declaration) =>
@@ -402,9 +425,20 @@ function tokenSignatureOf(node: Node): string {
   );
 
   const tokens: string[] = [];
+  const seenComments = new Set<number>();
   for (const declaration of declarations) {
     for (const leaf of leafTokensOf(declaration)) {
-      for (const comment of leaf.getLeadingCommentRanges()) {
+      // Leading *and* trailing. A comment after a statement on the same line is not
+      // leading trivia of any later token, so collecting only leading ranges drops it —
+      // and a changed `// contract` note would be filtered as formatting, which §8.1
+      // forbids. Positions are deduplicated because one comment can be trailing trivia
+      // of one token and leading trivia of the next.
+      for (const comment of [
+        ...leaf.getLeadingCommentRanges(),
+        ...leaf.getTrailingCommentRanges(),
+      ]) {
+        if (seenComments.has(comment.getPos())) continue;
+        seenComments.add(comment.getPos());
         tokens.push(comment.getText());
       }
       tokens.push(leaf.getText());
@@ -466,7 +500,12 @@ function assignedVariableName(node: Node): string | undefined {
  * change above `const fn = () => {}` would fall outside the callable's range and become
  * an unmapped change instead of a modification.
  */
-function lineSpanOf(node: Node): { start: number; end: number } {
+function lineSpanOf(node: Node): {
+  start: number;
+  end: number;
+  startPos: number;
+  endPos: number;
+} {
   const sourceFile = node.getSourceFile();
   // The span covers every declaration of the callable, so an edit to an overload
   // signature falls inside it. Spanning only the implementation would turn a signature
@@ -478,14 +517,17 @@ function lineSpanOf(node: Node): { start: number; end: number } {
       : declaration,
   );
 
-  const starts = spanNodes.map(
-    (spanNode) =>
-      sourceFile.getLineAndColumnAtPos(spanNode.getStart(true)).line,
-  );
-  const ends = spanNodes.map(
-    (spanNode) => sourceFile.getLineAndColumnAtPos(spanNode.getEnd()).line,
-  );
-  return { start: Math.min(...starts), end: Math.max(...ends) };
+  const startPositions = spanNodes.map((spanNode) => spanNode.getStart(true));
+  const endPositions = spanNodes.map((spanNode) => spanNode.getEnd());
+  const startPos = Math.min(...startPositions);
+  const endPos = Math.max(...endPositions);
+
+  return {
+    start: sourceFile.getLineAndColumnAtPos(startPos).line,
+    end: sourceFile.getLineAndColumnAtPos(endPos).line,
+    startPos,
+    endPos,
+  };
 }
 
 /**

@@ -10,7 +10,11 @@ import { mapSeeds, type SeedResult } from "../../../src/analysis/seeds.js";
 import { loadSnapshotPair } from "../../../src/project/program.js";
 import { createFixtureRepo } from "../../helpers/fixture-repo.js";
 
-const TIMEOUT_MS = 60_000;
+// Each case builds a real Git repository and loads a TypeScript program, and the cases
+// run in parallel with the rest of the suite. Individually they take a second or two, but
+// under full load one has been observed at 63 s. The limit guards against a hang, not
+// against slowness, so it is set well clear of the contended case.
+const TIMEOUT_MS = 180_000;
 
 const cleanups: Array<() => Promise<void>> = [];
 
@@ -277,6 +281,190 @@ describe("whitespace inside literals is part of the value", () => {
       expect(seedKeys(outcome.result)).toEqual([
         "src/a.ts :: :: function :: f modified",
       ]);
+    },
+    TIMEOUT_MS,
+  );
+});
+
+describe("a hunk covering a mixture of owners", () => {
+  it(
+    "seeds the outer callable too when one hunk changes both it and a nested one",
+    async () => {
+      // The two edits are on *adjacent* lines, so with `--unified=0` Git emits a single
+      // hunk spanning both. Line 2 belongs to `outer`, line 3 to `inner`. Attributing
+      // the hunk as a whole to its innermost member drops the `outer` change entirely —
+      // no seed, no gap — while the accounting still balances, which is exactly the
+      // failure hunk accounting exists to catch.
+      const base = [
+        "export function outer(): number {",
+        "  const n = 1;",
+        "  function inner(): number { return 1; }",
+        "  return n + inner();",
+        "}",
+        "",
+      ].join("\n");
+      const head = base
+        .replace("const n = 1;", "const n = 2;")
+        .replace("{ return 1; }", "{ return 3; }");
+      const outcome = await run({
+        base: { "src/a.ts": base },
+        head: { "src/a.ts": head },
+      });
+
+      // One hunk, two owners. Both must be seeded.
+      expect(outcome.hunksInDiff).toBe(1);
+      expect(seedKeys(outcome.result)).toEqual([
+        "src/a.ts :: :: function :: outer modified",
+        "src/a.ts :: outer :: function :: inner modified",
+      ]);
+      expectAccountsForEveryHunk(outcome);
+    },
+    TIMEOUT_MS,
+  );
+
+  it.each([
+    [
+      "two declarators in one statement",
+      "export const a = () => 1, b = () => 2;\n",
+      "export const a = () => 1, b = () => 3;\n",
+    ],
+    [
+      "two one-line function declarations",
+      "export function a(): number { return 1; } export function b(): number { return 2; }\n",
+      "export function a(): number { return 1; } export function b(): number { return 3; }\n",
+    ],
+  ])(
+    "seeds the changed one of two siblings sharing a line: %s",
+    async (_label, base, head) => {
+      // Both siblings are on **one line**, which is what makes this a test: split across
+      // two lines each owns its own line and any single-owner rule finds it. Siblings are
+      // not inside one another, so reducing a shared line to a single owner picks one
+      // arbitrarily — by key order — and discards the other with no seed and no gap while
+      // the accounting still balances. Changing `b`, the later key, is the failing case;
+      // changing `a` would pass either way.
+      const outcome = await run({
+        base: { "src/a.ts": base },
+        head: { "src/a.ts": head },
+      });
+
+      expect(seedKeys(outcome.result)).toEqual([
+        "src/a.ts :: :: function :: b modified",
+      ]);
+      expect(outcome.result.accounting.formattingFiltered).toBe(0);
+      expectAccountsForEveryHunk(outcome);
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "seeds only the inner callable when an outer and inner share one line",
+    async () => {
+      // Identical line spans. A line-based containment test calls these siblings and
+      // seeds both; §8.2 wants the innermost only. Character positions separate them.
+      const base =
+        "export function outer(): number { function inner(): number { return 1; } return inner(); }\n";
+      const head = base.replace("return 1;", "return 2;");
+      const outcome = await run({
+        base: { "src/a.ts": base },
+        head: { "src/a.ts": head },
+      });
+
+      expect(seedKeys(outcome.result)).toEqual([
+        "src/a.ts :: outer :: function :: inner modified",
+      ]);
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "seeds a newly added outer function and its nested one",
+    async () => {
+      const head = [
+        "export function outer(): number {",
+        "  function inner(): number {",
+        "    return 1;",
+        "  }",
+        "  return inner();",
+        "}",
+        "",
+      ].join("\n");
+      const outcome = await run({ base: {}, head: { "src/a.ts": head } });
+
+      expect(seedKeys(outcome.result)).toEqual([
+        "src/a.ts :: :: function :: outer added",
+        "src/a.ts :: outer :: function :: inner added",
+      ]);
+      expectAccountsForEveryHunk(outcome);
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "attributes a change inside an anonymous callback to the enclosing callable",
+    async () => {
+      // The change is *inside* the arrow, which is unsupported, so the nearest supported
+      // callable owns it. A fixture whose change sits in a different function entirely
+      // says nothing about this rule.
+      const base = [
+        "export function render(rows: string[]): string[] {",
+        "  return rows.map((row) => row.trim());",
+        "}",
+        "",
+      ].join("\n");
+      const head = base.replace("row.trim()", "row.trimEnd()");
+      const outcome = await run({
+        base: { "src/a.ts": base },
+        head: { "src/a.ts": head },
+      });
+
+      expect(seedKeys(outcome.result)).toEqual([
+        "src/a.ts :: :: function :: render modified",
+      ]);
+      expectAccountsForEveryHunk(outcome);
+    },
+    TIMEOUT_MS,
+  );
+});
+
+describe("comments anywhere in a declaration count", () => {
+  // §8.1 is explicit that a comment edit is a modification: a comment can state a
+  // contract callers rely on. Collecting only *leading* comment ranges misses a comment
+  // that follows code on the same line — it is not the leading trivia of any later
+  // token — so the signatures match and the hunk is filtered away as formatting.
+  it.each([
+    [
+      "a same-line line comment",
+      "export function f(): number {\n  return 1; // old contract\n}\n",
+      "export function f(): number {\n  return 1; // new contract\n}\n",
+    ],
+    [
+      "a same-line block comment",
+      "export function f(): number {\n  return 1; /* old contract */\n}\n",
+      "export function f(): number {\n  return 1; /* new contract */\n}\n",
+    ],
+    [
+      "a trailing comment before the closing brace",
+      "export function f(): number {\n  return 1;\n  // old note\n}\n",
+      "export function f(): number {\n  return 1;\n  // new note\n}\n",
+    ],
+    [
+      "a leading JSDoc",
+      "/** old */\nexport function f(): number {\n  return 1;\n}\n",
+      "/** new */\nexport function f(): number {\n  return 1;\n}\n",
+    ],
+  ])(
+    "seeds a change to %s",
+    async (_label, base, head) => {
+      const outcome = await run({
+        base: { "src/a.ts": base },
+        head: { "src/a.ts": head },
+      });
+
+      expect(seedKeys(outcome.result)).toEqual([
+        "src/a.ts :: :: function :: f modified",
+      ]);
+      expect(outcome.result.accounting.formattingFiltered).toBe(0);
+      expectAccountsForEveryHunk(outcome);
     },
     TIMEOUT_MS,
   );
