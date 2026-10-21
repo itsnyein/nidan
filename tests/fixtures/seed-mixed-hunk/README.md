@@ -19,6 +19,16 @@ signature is the line adjacent to the top-level statement. Changing `readonly` i
 parameter type is a real token-signature change, so `total` is genuinely `modified` rather
 than formatting-only.
 
+**Why there are two gaps.** `LIMIT` is uncovered on **both** snapshots — it changed in
+base and in head, and no callable contains it either way — so each side's uncovered run is
+named on its own snapshot (§8.2 as ruled 2026-10-21). Here the two gaps describe the same
+edit, so the second is redundant information rather than a second finding.
+
+That redundancy is **accepted, not a defect**. It is the price of not losing the case the
+round-2 review found: a statement _deleted_ beside a modified callable has uncovered base
+lines and no head counterpart, so a head-preferring rule names nothing for it at all.
+Collapsing these two gaps back into one would reopen that hole.
+
 **What this caught.** `mapSeeds` tested its seed-consumed branch first, so a hunk
 attributed to a seeded callable was counted as fully consumed whatever else it changed.
 The `LIMIT` edit got neither a seed nor a gap while hunk accounting still balanced — the
