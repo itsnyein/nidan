@@ -180,6 +180,122 @@ describe("the boundary rule, isolated from the formatting guard", () => {
   );
 });
 
+describe("a hunk with two separate uncovered regions", () => {
+  it(
+    "reports a gap for each region, not just the first",
+    async () => {
+      // Found by the T2.5 reviewer against unmutated code. One hunk leaves two separate
+      // regions unaccounted for — a top-level line above the callable and another below
+      // it. Emitting a single gap per hunk names only the first, so the `OTHER` change is
+      // real, unreported, and the accounting still balances: this task's own failure mode
+      // surviving at a finer grain than the hunk.
+      //
+      // Why this input has the claimed shape: all three lines are edited and adjacent, so
+      // Git emits one hunk (`@@ -1,3 +1,3 @@`, asserted below). `total` is written on a
+      // single line so that the covered line sits *between* the two uncovered ones —
+      // split across lines it would merge the regions into one run and the case would
+      // vanish.
+      const base = [
+        "export const LIMIT = 1;",
+        "export function total(): number { return 1; }",
+        "export const OTHER = 1;",
+        "",
+      ].join("\n");
+      const head = [
+        "export const LIMIT = 2;",
+        "export function total(): number { return 9; }",
+        "export const OTHER = 2;",
+        "",
+      ].join("\n");
+      const outcome = await run({
+        base: { "src/a.ts": base },
+        head: { "src/a.ts": head },
+      });
+
+      expect(outcome.hunksInDiff).toBe(1);
+      expect(seedKeys(outcome.result)).toEqual([
+        "src/a.ts :: :: function :: total modified",
+      ]);
+
+      const unmapped = outcome.result.gaps
+        .filter((gap) => gap.kind === "unmapped-change")
+        .map((gap) => `${gap.snapshot}:${String(gap.line)}`)
+        .sort();
+      expect(unmapped).toEqual(["head:1", "head:3"]);
+      // Counted once, as seed-consumed: two gaps about one hunk are not two hunks.
+      expect(outcome.result.accounting).toMatchObject({
+        totalHunks: 1,
+        seedConsumed: 1,
+        gapOnly: 0,
+      });
+    },
+    TIMEOUT_MS,
+  );
+});
+
+describe("a boundary position must not seed a neighbour it is outside", () => {
+  it(
+    "does not seed an unchanged nested callable whose container was renamed",
+    async () => {
+      // The case that proves `boundaryOwners` is load-bearing. Found by the T2.5
+      // reviewer after I wrongly reported the rule as unreachable: I only looked for
+      // neighbours whose *text* changed, and the distinguishing case is a neighbour
+      // whose **key** changes while its text does not.
+      //
+      // Why this input has the claimed shape: renaming `C` to `C2` re-keys `B` from
+      // `C.m :: function :: B` to `C2.m :: function :: B`, so base `B` has no head
+      // counterpart and would classify as `deleted` if anything attributed to it. The
+      // inserted line sits between `const x` (innermost owner `m`) and `B`'s declaration
+      // (innermost owner `B`), so the two adjacent lines have **different** innermost
+      // owners — the condition the boundary rule turns on. Verified as three hunks under
+      // the pinned flags, the middle one `@@ -5,0 +6 @@`, a true zero-count range.
+      //
+      // Taking the union of both neighbours instead attributes the insertion to `B` and
+      // emits a spurious `B deleted`: an unchanged callable reported as deleted because
+      // a line was inserted *outside* it.
+      const base = [
+        "export const TOP = 1;",
+        "",
+        "export class C {",
+        "  m(): number {",
+        "    const x = 1;",
+        "    function B(): number { return 2; }",
+        "    return x + B();",
+        "  }",
+        "}",
+        "",
+      ].join("\n");
+      const head = [
+        "export const TOP = 1;",
+        "",
+        "export class C2 {",
+        "  m(): number {",
+        "    const x = 1;",
+        "    const INS = 0;",
+        "    function B(): number { return 2; }",
+        "    return x + B() + INS;",
+        "  }",
+        "}",
+        "",
+      ].join("\n");
+      const outcome = await run({
+        base: { "src/a.ts": base },
+        head: { "src/a.ts": head },
+      });
+
+      expect(outcome.hunksInDiff).toBe(3);
+      // `B` is untouched in both snapshots; only its container's name changed.
+      expect(seedKeys(outcome.result)).not.toContain(
+        "src/a.ts :: C.m :: function :: B deleted",
+      );
+      expect(seedKeys(outcome.result)).not.toContain(
+        "src/a.ts :: C2.m :: function :: B added",
+      );
+    },
+    TIMEOUT_MS,
+  );
+});
+
 describe("the formatting bucket requires formatting-only text", () => {
   it(
     "gaps a hunk whose changed text lies outside every equal-comparing callable",

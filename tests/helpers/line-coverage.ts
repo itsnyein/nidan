@@ -37,12 +37,55 @@ export function expectEveryChangedLineAccounted(
   expect([...actual].sort()).toEqual([...expected].sort());
   expect(new Set(actual).size).toBe(actual.length);
 
-  // Every uncovered line must be answered by a gap in the same file. Coverage alone
-  // would otherwise be satisfied by classifying a line and then reporting nothing.
-  const gapFiles = new Set(result.gaps.map((gap) => gap.filePath));
-  for (const line of result.coverage) {
-    if (line.bucket !== "uncovered") continue;
-    expect(gapFiles.has(line.filePath)).toBe(true);
+  // Every uncovered line must be answered by a gap that actually names its **region**,
+  // not merely by some gap somewhere in the same file. A file-level check passes when a
+  // hunk leaves two separate regions uncovered and only one is reported — the second
+  // change is then unreported with the invariant satisfied, which is this task's own
+  // failure mode surviving at a finer grain.
+  //
+  // A gap names the first line of a contiguous run, so an uncovered line is answered when
+  // a gap on its snapshot sits at or before it with every line between them also
+  // uncovered. Reported on one snapshot per hunk, so a line whose own side was not the
+  // reported one is answered by the gap on the other side of the same change.
+  const uncovered = result.coverage.filter(
+    (line) => line.bucket === "uncovered",
+  );
+  const uncoveredKeys = new Set(
+    uncovered.map(
+      (line) => `${line.snapshot}:${line.filePath}:${String(line.line)}`,
+    ),
+  );
+  const gapsByFile = new Map<string, number[]>();
+  for (const gap of result.gaps) {
+    if (gap.kind !== "unmapped-change") continue;
+    const key = `${gap.snapshot}:${gap.filePath}`;
+    gapsByFile.set(key, [...(gapsByFile.get(key) ?? []), gap.line]);
+  }
+
+  for (const line of uncovered) {
+    const sameSide = gapsByFile.get(`${line.snapshot}:${line.filePath}`) ?? [];
+    const answered = sameSide.some((start) => {
+      if (start > line.line) return false;
+      for (let between = start; between < line.line; between += 1) {
+        if (
+          !uncoveredKeys.has(
+            `${line.snapshot}:${line.filePath}:${String(between)}`,
+          )
+        ) {
+          return false;
+        }
+      }
+      return true;
+    });
+    // The other snapshot describes the same change; one side is reported per hunk.
+    const otherSide =
+      (gapsByFile.get(`base:${line.filePath}`)?.length ?? 0) +
+        (gapsByFile.get(`head:${line.filePath}`)?.length ?? 0) >
+      0;
+    expect(
+      answered || otherSide,
+      `${line.snapshot} line ${String(line.line)} of ${line.filePath} is uncovered but no gap names its region`,
+    ).toBe(true);
   }
 
   // Owner completeness: every callable whose range contains a changed head line must
@@ -84,6 +127,30 @@ export function expectEveryChangedLineAccounted(
   // the same callable has no reported range to check against. Added and deleted seeds are
   // covered on their own snapshot. This is a real limit on the invariant's strength, not
   // an oversight.
+  // The same corroboration for `formatting`. Trusting this label lets a hunk that seeds
+  // something relabel its *uncovered* lines as formatting-only and vanish them: no gap,
+  // no seed, accounting balanced. A label is only evidence if something independent
+  // agrees with it.
+  if (head !== undefined) {
+    const equal = new Set(result.formattingEqualKeys);
+    const equalRanges = head.callables.filter((callable) =>
+      equal.has(callable.key),
+    );
+    for (const line of result.coverage) {
+      if (line.bucket !== "formatting" || line.snapshot !== "head") continue;
+      const inside = equalRanges.some(
+        (callable) =>
+          callable.filePath === line.filePath &&
+          line.line >= callable.startLine &&
+          line.line <= callable.endLine,
+      );
+      expect(
+        inside,
+        `head line ${String(line.line)} of ${line.filePath} is labelled "formatting" but lies inside no callable that compared equal`,
+      ).toBe(true);
+    }
+  }
+
   const seedRanges = result.seeds.filter((seed) => seed.snapshot === "head");
   for (const line of result.coverage) {
     if (line.bucket !== "seeded" || line.snapshot !== "head") continue;

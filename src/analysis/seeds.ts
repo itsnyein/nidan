@@ -157,7 +157,14 @@ export function mapSeeds(input: MapSeedsInput): SeedResult {
     else if (uncovered.length === 0) formattingFiltered += 1;
     else gapOnly += 1;
 
-    if (uncovered.length > 0) gaps.push(unmappedGap(attribution, uncovered));
+    // One gap per **contiguous run** of uncovered lines, not one per hunk. A hunk can
+    // leave two separate regions unaccounted for — a top-level line above a callable and
+    // another below it — and a single gap names only one of them, leaving the other
+    // changed but unreported. That is the same silent miss this task exists to close,
+    // surviving at a finer grain than the hunk.
+    for (const run of uncoveredRuns(attribution, uncovered)) {
+      gaps.push(unmappedGap(attribution, run));
+    }
   }
 
   return {
@@ -460,33 +467,51 @@ function dedupeCollisions(gaps: readonly SeedGap[]): SeedGap[] {
   return unique;
 }
 
-function unmappedGap(
+function uncoveredRuns(
   attribution: Attribution,
   uncovered: readonly CoveredLine[],
-): SeedGap {
+): CoveredLine[][] {
+  if (uncovered.length === 0) return [];
+
   // Reported against the side that actually holds the uncovered text. A deleted file has
   // no head side at all, and a pure deletion inside a modified file has an empty head
-  // range — pointing at a head line would name code that did not change. When both sides
-  // have uncovered lines, head is preferred: it is the snapshot usages are taken from.
+  // range — naming a head line there would point at code that did not change. When both
+  // sides hold uncovered text the head side wins: it is the snapshot usages are taken
+  // from, and the two sides describe the same change, so reporting both double-reports it.
   const preferred: Snapshot =
     attribution.fileDiff.change === "deleted" ||
     attribution.hunk.head.count === 0
       ? "base"
       : "head";
   const onPreferred = uncovered.filter((line) => line.snapshot === preferred);
-  const reported = onPreferred.length > 0 ? onPreferred : uncovered;
+  const reported = onPreferred.length > 0 ? onPreferred : [...uncovered];
 
-  // The first uncovered line, so the gap names where the unaccounted change begins
-  // rather than wherever the hunk happens to start.
-  const line = reported.reduce(
-    (lowest, candidate) => Math.min(lowest, candidate.line),
-    Number.POSITIVE_INFINITY,
-  );
+  const ordered = [...reported].sort((left, right) => left.line - right.line);
+  const runs: CoveredLine[][] = [];
+  for (const line of ordered) {
+    const current = runs.at(-1);
+    const previous = current?.at(-1);
+    if (current !== undefined && previous?.line === line.line - 1) {
+      current.push(line);
+    } else {
+      runs.push([line]);
+    }
+  }
+  return runs;
+}
+
+function unmappedGap(
+  attribution: Attribution,
+  run: readonly CoveredLine[],
+): SeedGap {
+  // The run's first line, so the gap names where the unaccounted change begins.
+  const first = run[0];
+  if (first === undefined) throw new Error("unmappedGap: empty run");
   return {
     kind: "unmapped-change",
-    snapshot: reported[0]?.snapshot ?? preferred,
+    snapshot: first.snapshot,
     filePath: attribution.fileDiff.path,
-    line,
+    line: first.line,
     reasonCode: "no-enclosing-callable",
   };
 }

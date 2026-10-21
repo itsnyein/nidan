@@ -260,21 +260,38 @@ describe("the line-level invariant holds for generated cases", () => {
 
   it("generates the three shapes that caused M2's silent misses", () => {
     // The generator is only worth running if it can reach the failures this task closes.
-    // Asserted rather than assumed: a generator that quietly stopped emitting one of
-    // these would keep passing while covering less.
+    //
+    // The predicates below test what was **edited**, not merely what was emitted. An
+    // earlier version accepted an unedited sibling pair and non-adjacent top-level and
+    // function edits, so it claimed coverage the generated cases did not have — the same
+    // "passes for the wrong reason" failure this whole task exists to end, in the test
+    // that was supposed to guard against it.
     const random = randomFrom(rng(SEED));
     const seen = new Set<string>();
     for (let index = 0; index < CASES; index += 1) {
-      const generated = generateCase(random);
-      if (generated.base.includes("= () =>") && generated.base.includes(", b"))
+      const { description } = generateCase(random);
+      const edits = description.split(", ");
+
+      // A sibling pair that was actually changed, not one that merely exists.
+      if (edits.some((edit) => edit.startsWith("sibling-pair#")))
         seen.add("siblings-on-one-line");
-      if (generated.description.includes("insert-before"))
+
+      if (edits.some((edit) => edit.endsWith("insert-before")))
         seen.add("boundary-insertion");
-      if (
-        generated.description.includes("top-level") &&
-        generated.description.includes("function")
-      )
-        seen.add("substantive-text-beside-a-callable");
+
+      // Adjacent declarations, both edited: the mixed-hunk shape. Non-adjacent edits land
+      // in separate hunks and do not exercise it at all.
+      for (const [first, second] of pairs(edits)) {
+        const firstIndex = Number(first.split("#")[1]?.split(":")[0]);
+        const secondIndex = Number(second.split("#")[1]?.split(":")[0]);
+        if (secondIndex !== firstIndex + 1) continue;
+        const involvesTopLevel =
+          first.startsWith("top-level#") || second.startsWith("top-level#");
+        const involvesCallable =
+          first.startsWith("function#") || second.startsWith("function#");
+        if (involvesTopLevel && involvesCallable)
+          seen.add("substantive-text-beside-a-callable");
+      }
     }
 
     expect([...seen].sort()).toEqual([
@@ -290,4 +307,16 @@ function indent(text: string): string {
     .split("\n")
     .map((line) => `    | ${line}`)
     .join("\n");
+}
+
+/** Consecutive pairs of a list. */
+function pairs(items: readonly string[]): Array<[string, string]> {
+  const result: Array<[string, string]> = [];
+  for (let index = 0; index + 1 < items.length; index += 1) {
+    const first = items[index];
+    const second = items[index + 1];
+    if (first !== undefined && second !== undefined)
+      result.push([first, second]);
+  }
+  return result;
 }
