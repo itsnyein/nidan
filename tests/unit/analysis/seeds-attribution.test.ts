@@ -106,6 +106,205 @@ function expectAccountsForEveryHunk(outcome: Outcome): void {
   expect(outcome.hunksInDiff).toBeGreaterThan(0);
 }
 
+describe("the boundary rule, isolated from the formatting guard", () => {
+  it(
+    "gaps an insertion next to a function that is itself seeded by another hunk",
+    async () => {
+      // The two rules overlap on the E2c fixtures: there the insertion's neighbour is
+      // unchanged, so the formatting guard alone already turns the hunk into a gap and
+      // the boundary rule is never the deciding factor. This case separates them.
+      //
+      // Why this input has the claimed shape: `SCALE` is inserted between the two
+      // functions **and** `second`'s body changes, far enough apart that Git emits two
+      // hunks — verified as `@@ -4,0 +5,2 @@` and `@@ -6 +8 @@` under the pinned flags.
+      // The first is the zero-count insertion; the second makes `second` a seed.
+      //
+      // Under the old reading the insertion's position touched `second`, which is now
+      // seeded, so the hunk counted as seed-consumed — and the formatting guard never
+      // ran, because the seeded branch is tested first. The inserted statement vanished
+      // into a seed it has nothing to do with. Only the boundary rule catches this.
+      const base = [
+        "export function first(): number {",
+        "  return 1;",
+        "}",
+        "",
+        "export function second(): number {",
+        "  return 2;",
+        "}",
+        "",
+      ].join("\n");
+      const head = [
+        "export function first(): number {",
+        "  return 1;",
+        "}",
+        "",
+        "const SCALE = 10;",
+        "",
+        "export function second(): number {",
+        "  return 99;",
+        "}",
+        "",
+      ].join("\n");
+      const outcome = await run({
+        base: { "src/a.ts": base },
+        head: { "src/a.ts": head },
+      });
+
+      expect(outcome.hunksInDiff).toBe(2);
+      // `second` really did change, so it is a seed.
+      expect(seedKeys(outcome.result)).toEqual([
+        "src/a.ts :: :: function :: second modified",
+      ]);
+      // And the insertion is still reported rather than absorbed into that seed.
+      const unmapped = outcome.result.gaps.filter(
+        (gap) => gap.kind === "unmapped-change",
+      );
+      expect(unmapped).toHaveLength(1);
+      expect(outcome.result.accounting).toMatchObject({
+        seedConsumed: 1,
+        formattingFiltered: 0,
+        gapOnly: 1,
+      });
+      expectAccountsForEveryHunk(outcome);
+    },
+    TIMEOUT_MS,
+  );
+});
+
+describe("the formatting bucket requires formatting-only text", () => {
+  it(
+    "gaps a hunk whose changed text lies outside every equal-comparing callable",
+    async () => {
+      // Rule 2 tested *independently of the boundary rule*: this hunk has real lines on
+      // both sides, so it never reaches the zero-count branch.
+      //
+      // Why this input has the claimed shape: `LIMIT` is on the line **immediately
+      // before** the reformatted signature, so both edits are contiguous and Git emits a
+      // single hunk, verified as `@@ -1,2 +1,5 @@` under the pinned flags. Putting
+      // `LIMIT` after the function body instead produces two hunks — the substantive one
+      // is then already a gap on its own and the test proves nothing. That is the first
+      // way I wrote it.
+      //
+      // `keep` is reformatted only (argument list rewrapped, trailing comma added) so it
+      // compares equal, which under the old rule was enough to put the whole hunk in the
+      // formatting bucket — taking the substantive `LIMIT` edit with it.
+      const base = [
+        "const LIMIT = 1;",
+        "export function keep(a: number, b: number): number {",
+        "  return a + b;",
+        "}",
+        "",
+      ].join("\n");
+      const head = [
+        "const LIMIT = 2;",
+        "export function keep(",
+        "  a: number,",
+        "  b: number,",
+        "): number {",
+        "  return a + b;",
+        "}",
+        "",
+      ].join("\n");
+      const outcome = await run({
+        base: { "src/a.ts": base },
+        head: { "src/a.ts": head },
+      });
+
+      // One hunk: if Git split these into two, the substantive edit would be a gap on
+      // its own and the guard would not be under test.
+      expect(outcome.hunksInDiff).toBe(1);
+      // `keep` is reformatting only, so it is not a seed.
+      expect(seedKeys(outcome.result)).toEqual([]);
+      // But the `LIMIT` change is real and belongs to no callable, so the hunk cannot be
+      // filtered: it is reported.
+      expect(outcome.result.accounting.formattingFiltered).toBe(0);
+      const unmapped = outcome.result.gaps.filter(
+        (gap) => gap.kind === "unmapped-change",
+      );
+      expect(unmapped.length).toBeGreaterThan(0);
+      expectAccountsForEveryHunk(outcome);
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "still filters a hunk whose changed text is entirely inside an equal callable",
+    async () => {
+      // The other side of the guard: the same reformatting with no substantive edge.
+      // Without this, a guard that rejected everything would pass the test above.
+      const base =
+        "export function keep(a: number, b: number): number {\n  return a + b;\n}\n";
+      const head = [
+        "export function keep(",
+        "  a: number,",
+        "  b: number,",
+        "): number {",
+        "  return a + b;",
+        "}",
+        "",
+      ].join("\n");
+      const outcome = await run({
+        base: { "src/a.ts": base },
+        head: { "src/a.ts": head },
+      });
+
+      expect(seedKeys(outcome.result)).toEqual([]);
+      expect(outcome.result.gaps).toEqual([]);
+      expect(outcome.result.accounting.formattingFiltered).toBeGreaterThan(0);
+      expectAccountsForEveryHunk(outcome);
+    },
+    TIMEOUT_MS,
+  );
+});
+
+describe("insertions at a file boundary", () => {
+  it(
+    "gaps a line inserted before the first line of a file",
+    async () => {
+      // A zero-count range at line 0: there is no line *before* the insertion point, so
+      // no callable can contain both sides. The rule's "both adjacent lines" cannot be
+      // satisfied, and the alternative — treating the single existing neighbour as the
+      // owner — is what attributed insertions to unchanged code in the first place.
+      const base = "export function only(): number {\n  return 1;\n}\n";
+      const head = "const HEADER = 1;\n" + base;
+      const outcome = await run({
+        base: { "src/a.ts": base },
+        head: { "src/a.ts": head },
+      });
+
+      expect(seedKeys(outcome.result)).toEqual([]);
+      expect(outcome.result.accounting.formattingFiltered).toBe(0);
+      expect(outcome.result.accounting.gapOnly).toBe(1);
+      expectAccountsForEveryHunk(outcome);
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "seeds a line appended after the last line of a function at the end of a file",
+    async () => {
+      // The mirror case, and the one an off-by-one at the end of the file would break:
+      // the insertion point is between the final statement and the closing brace, both
+      // inside `only`.
+      const base =
+        "export function only(values: number[]): void {\n  values.push(1);\n}\n";
+      const head =
+        "export function only(values: number[]): void {\n  values.push(1);\n  values.push(2);\n}\n";
+      const outcome = await run({
+        base: { "src/a.ts": base },
+        head: { "src/a.ts": head },
+      });
+
+      expect(seedKeys(outcome.result)).toEqual([
+        "src/a.ts :: :: function :: only modified",
+      ]);
+      expect(outcome.result.gaps).toEqual([]);
+      expectAccountsForEveryHunk(outcome);
+    },
+    TIMEOUT_MS,
+  );
+});
+
 describe("a hunk covering several callables", () => {
   const THREE = [
     "export function alpha(): number {",

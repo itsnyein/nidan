@@ -122,7 +122,7 @@ export function mapSeeds(input: MapSeedsInput): SeedResult {
     const keys = [...attribution.keys];
     if (keys.some((key) => seededKeys.has(key))) {
       seedConsumed += 1;
-    } else if (keys.some((key) => filteredKeys.has(key))) {
+    } else if (isFormattingOnly(attribution, input, filteredKeys)) {
       formattingFiltered += 1;
     } else {
       gapOnly += 1;
@@ -204,26 +204,99 @@ function attributedKeys(
   );
   if (inFile.length === 0) return [];
 
+  if (range.count === 0) return boundaryOwners(inFile, range);
+
   const keys = new Set<string>();
-  for (const line of changedLines(range)) {
+  for (const line of linesOf(range)) {
     for (const owner of innermostOwners(inFile, line)) keys.add(owner.key);
   }
   return [...keys];
 }
 
 /**
- * The lines a range touches.
+ * The owners of a zero-count range — a *position between two lines*, not a span (§8.2 as
+ * amended 2026-10-21).
  *
- * A zero-count range is an insertion point rather than a span: Git reports it as the line
- * the new content follows. Both the line before and the line after are touched, because
- * inserting between two lines of a function body changed that function, and a callable
- * may start on either side of the insertion.
+ * The position belongs to a callable only when **both** adjacent lines lie inside that
+ * same callable. A statement inserted between two functions sits next to one function's
+ * last line and the next function's first, so it belongs to neither and the hunk becomes
+ * an `unmapped-change` gap.
+ *
+ * Treating the position as touching both neighbours instead — the earlier reading —
+ * attributed such an insertion to functions whose own text had not changed. They compared
+ * equal, the hunk was filtered as formatting, and a real insertion produced no seed and no
+ * gap while the accounting still balanced.
  */
-function changedLines(range: Hunk["base"]): number[] {
-  if (range.count === 0) {
-    return range.start === 0 ? [1] : [range.start, range.start + 1];
-  }
+function boundaryOwners(
+  callables: readonly Callable[],
+  range: Hunk["base"],
+): string[] {
+  // `start === 0` means "before the first line": there is no line before it, so no
+  // callable can contain both sides and the change cannot belong to one.
+  if (range.start === 0) return [];
+
+  const after = new Set(
+    innermostOwners(callables, range.start + 1).map((owner) => owner.key),
+  );
+  return innermostOwners(callables, range.start)
+    .map((owner) => owner.key)
+    .filter((key) => after.has(key));
+}
+
+/** The lines a non-empty range spans. A zero-count range spans none — see `boundaryOwners`. */
+function linesOf(range: Hunk["base"]): number[] {
   return Array.from({ length: range.count }, (_, index) => range.start + index);
+}
+
+/**
+ * Whether a hunk may be counted as formatting-filtered (§8.1, §8.2 as amended).
+ *
+ * The bucket requires that **the hunk's own changed text** is formatting-only — not
+ * merely that the callables it was attributed to happen to compare equal. Without this,
+ * a hunk lands in the bucket because of what it was attributed *to*, so a misattribution
+ * of any kind lets substantive text vanish from the report with the accounting balanced.
+ *
+ * "Formatting-only" is judged by reusing the token-signature comparison rather than
+ * re-normalizing the hunk's raw text: a signature comparison already *is* §8.1 over
+ * exactly the text inside a callable, and normalizing raw lines would treat whitespace
+ * inside a string, template substitution, or regex literal as insignificant when it is
+ * part of the program's value. So every changed line must lie inside a callable that was
+ * attributed to this hunk **and** compared equal across snapshots.
+ *
+ * Only sides that actually hold changed text are examined: for a pure insertion that is
+ * the head side alone, and for a pure deletion the base side alone.
+ */
+function isFormattingOnly(
+  attribution: Attribution,
+  input: MapSeedsInput,
+  filteredKeys: ReadonlySet<string>,
+): boolean {
+  const sides: Array<[CallableIndex, Hunk["base"]]> = [];
+  if (attribution.fileDiff.change !== "added") {
+    sides.push([input.base, attribution.hunk.base]);
+  }
+  if (attribution.fileDiff.change !== "deleted") {
+    sides.push([input.head, attribution.hunk.head]);
+  }
+
+  let changedLineCount = 0;
+  for (const [index, range] of sides) {
+    const inFile = index.callables.filter(
+      (callable) => callable.filePath === attribution.fileDiff.path,
+    );
+    for (const line of linesOf(range)) {
+      changedLineCount += 1;
+      const covered = innermostOwners(inFile, line).some(
+        (owner) =>
+          attribution.keys.has(owner.key) && filteredKeys.has(owner.key),
+      );
+      if (!covered) return false;
+    }
+  }
+
+  // A hunk with no changed text on either examined side has nothing to call
+  // formatting-only; it belongs in the gap bucket, where it is reported.
+  return changedLineCount > 0;
 }
 
 /**
