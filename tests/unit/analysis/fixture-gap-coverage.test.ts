@@ -42,8 +42,28 @@ afterEach(async () => {
  * would break on any refactor that moved a name. Asserting them directly makes the
  * property true by construction.
  */
+/**
+ * Fixtures whose records state a ruling that is **not yet implemented**, with the task
+ * that implements it.
+ *
+ * Each entry is asserted to **fail** below, not skipped. A plain skip-list would be a
+ * structural defect by `decisions.md` §7a: it could hide a genuine regression, and it
+ * would outlive the fix silently. Asserting the failure means the day T2.7 lands, the
+ * `still fails` test fails and forces the entry out of this map.
+ */
+// `seed-declaration-keyword` is deliberately **not** listed. Its ruling concerns seeds,
+// and it records no gaps, so the gap assertion matches trivially — listing it would assert
+// a failure that does not occur, and the entry would later need removing for a reason
+// unrelated to the fix. Its seed expectation is pending in `seeds.test.ts`.
+const PENDING = new Map<string, string>([
+  [
+    "seed-overload-hull-gap",
+    "T2.7 — overload sets own each declaration's own range",
+  ],
+]);
+
 describe("every fixture is asserted against its record", () => {
-  const names = allFixtures();
+  const names = allFixtures().filter((name) => !PENDING.has(name));
 
   it("enumerates every fixture directory holding an expected.json", () => {
     // Guards the enumeration against *shrinking*, not merely against emptying. An earlier
@@ -60,32 +80,48 @@ describe("every fixture is asserted against its record", () => {
       )
       .sort();
 
-    expect(names).toEqual(directories);
+    expect([...names, ...PENDING.keys()].sort()).toEqual(directories);
     expect(names.length).toBeGreaterThan(0);
   });
+
+  it.each([...PENDING.entries()])(
+    "%s still fails, pending %s",
+    async (name) => {
+      // Asserts the pending fixture is **still** unimplemented. When the ruling lands,
+      // this test fails and the entry must be removed from PENDING — a skip-list that
+      // cannot outlive its fix.
+      await expect(runFixture(name)).rejects.toThrow();
+    },
+    TIMEOUT_MS,
+  );
 
   it.each(names)(
     "%s produces exactly the gaps it records",
     async (name) => {
-      const repo = await createFixtureRepo(join("tests", "fixtures", name));
-      cleanups.push(repo.cleanup);
-      const pair = await loadSnapshotPair({
-        repoRoot: repo.path,
-        baseSha: repo.baseSha,
-        headSha: repo.headSha,
-      });
-      const diff = await diffCommits(repo.path, repo.baseSha, repo.headSha);
-      const result = mapSeeds({
-        diff,
-        base: enumerateCallables(pair.base.project.getSourceFiles(), repo.path),
-        head: enumerateCallables(pair.head.project.getSourceFiles(), repo.path),
-      });
-
-      expectGapsMatchFixture(result, name);
+      await runFixture(name);
     },
     TIMEOUT_MS,
   );
 });
+
+/** Runs the whole chain over a fixture and asserts its gaps against its record. */
+async function runFixture(name: string): Promise<void> {
+  const repo = await createFixtureRepo(join("tests", "fixtures", name));
+  cleanups.push(repo.cleanup);
+  const pair = await loadSnapshotPair({
+    repoRoot: repo.path,
+    baseSha: repo.baseSha,
+    headSha: repo.headSha,
+  });
+  const diff = await diffCommits(repo.path, repo.baseSha, repo.headSha);
+  const result = mapSeeds({
+    diff,
+    base: enumerateCallables(pair.base.project.getSourceFiles(), repo.path),
+    head: enumerateCallables(pair.head.project.getSourceFiles(), repo.path),
+  });
+
+  expectGapsMatchFixture(result, name);
+}
 
 describe("the gap comparison is a multiset", () => {
   const gap = (reasonCode = "no-enclosing-callable"): RecordedGap => ({

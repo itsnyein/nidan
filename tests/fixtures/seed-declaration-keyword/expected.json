@@ -1,0 +1,11 @@
+{
+  "description": "Changing the declaration keyword of a multi-declarator statement is substantive: the keyword is part of every declarator's token signature, so both callables are modified.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      { "key": "src/a.ts :: :: function :: a", "change": "modified" },
+      { "key": "src/a.ts :: :: function :: b", "change": "modified" }
+    ],
+    "repoWideGaps": []
+  }
+}
