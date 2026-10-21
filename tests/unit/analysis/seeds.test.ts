@@ -160,17 +160,16 @@ describe("classification against the frozen fixtures", () => {
   );
 });
 
-describe.skip("boundary insertions and deletions", () => {
+describe("boundary insertions and deletions", () => {
   // §8.2 as amended 2026-10-21: a zero-count range is a position *between* two lines. It
   // belongs to a callable only when both adjacent lines lie inside that same callable;
   // otherwise the hunk is an `unmapped-change` gap, never attributed to an unchanged
   // neighbour.
   //
-  // Skipped until T2.4 implements the rule. Observed on `1452f50`, both cases produce
-  // `seeds: [], gaps: [], formattingFiltered: 1` — the insertion is absorbed by the
-  // formatting bucket and vanishes from the report while the accounting balances. That
-  // is the defect; these assertions are its reproduction, so they are left failing-by-
-  // skip rather than weakened to match current behaviour.
+  // Before T2.4 both cases produced `seeds: [], gaps: [], formattingFiltered: 1` on
+  // `1452f50`: the insertion was attributed to an unchanged neighbour, compared equal,
+  // and was absorbed by the formatting bucket — vanishing from the report while the
+  // accounting balanced.
   it.each(["seed-boundary-insert-between", "seed-boundary-delete-between"])(
     "%s reports an unmapped-change gap and seeds neither neighbour",
     async (name) => {
