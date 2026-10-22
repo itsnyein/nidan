@@ -53,6 +53,14 @@ export interface HunkAccounting {
   readonly seedConsumed: number;
   /** Formatting only: a real hunk, deliberately not a seed and not a gap (§8.1). */
   readonly formattingFiltered: number;
+  /**
+   * Covered by an `ambiguous-identity` gap: every changed line sits inside a callable
+   * whose key collides, so the change is reported by that gap rather than seeded.
+   *
+   * Its own bucket because such a hunk **does** have a gap, which `formattingFiltered`
+   * explicitly does not.
+   */
+  readonly ambiguousCovered: number;
   readonly gapOnly: number;
 }
 
@@ -152,6 +160,7 @@ export function mapSeeds(input: MapSeedsInput): SeedResult {
 
   let seedConsumed = 0;
   let formattingFiltered = 0;
+  let ambiguousCovered = 0;
   let gapOnly = 0;
   for (const attribution of attributions) {
     const own = lines.filter((line) => line.attribution === attribution);
@@ -159,9 +168,17 @@ export function mapSeeds(input: MapSeedsInput): SeedResult {
 
     // A hunk that both seeds and leaves lines uncovered counts once, as seed-consumed:
     // the gap is extra information about that hunk, not a second hunk.
+    //
+    // A hunk whose lines sit inside colliding callables gets its own bucket. It used to
+    // land in `formattingFiltered`, which contradicted that bucket's own meaning —
+    // "deliberately not a seed and not a gap" — because such a hunk *does* have a gap,
+    // the `ambiguous-identity` one. Nothing was lost, but the summary described the hunk
+    // as filtered formatting when its text was substantive.
     if (own.some((line) => line.bucket === "seeded")) seedConsumed += 1;
-    else if (uncovered.length === 0) formattingFiltered += 1;
-    else gapOnly += 1;
+    else if (uncovered.length > 0) gapOnly += 1;
+    else if (own.some((line) => line.bucket === "ambiguous"))
+      ambiguousCovered += 1;
+    else formattingFiltered += 1;
 
     // One gap per **contiguous run** of uncovered lines, not one per hunk. A hunk can
     // leave two separate regions unaccounted for — a top-level line above a callable and
@@ -181,6 +198,7 @@ export function mapSeeds(input: MapSeedsInput): SeedResult {
       totalHunks: attributions.length,
       seedConsumed,
       formattingFiltered,
+      ambiguousCovered,
       gapOnly,
     },
     formattingEqualKeys: [...filteredKeys].sort(),
@@ -609,13 +627,43 @@ function unmappedGap(
   };
 }
 
-function compareGaps(left: SeedGap, right: SeedGap): number {
-  if (left.filePath !== right.filePath)
+/**
+ * Orders gaps deterministically. Exported so its **contract** can be tested directly:
+ * sorted output cannot distinguish a correct comparator from an inconsistent one that
+ * V8's stable sort happens to order the same way, which is how the previous inconsistency
+ * survived a test asserting sort order.
+ */
+export function compareGaps(left: SeedGap, right: SeedGap): number {
+  // A **total order**: equal gaps compare 0, and every field participates. The previous
+  // comparator never returned 0 and broke the final tie as `left.kind < right.kind ? -1 : 1`,
+  // which returns 1 for *both* orderings of two gaps equal in (file, line, kind) — an
+  // inconsistent comparator, for which the language leaves sort order unspecified. The tie
+  // is reachable (a base-side and a head-side gap at the same line), so today's
+  // determinism rests on the engine's sort implementation rather than on this function:
+  // a latent cross-version risk for M5's byte-identical-JSON criterion.
+  if (left.filePath !== right.filePath) {
     return left.filePath < right.filePath ? -1 : 1;
-  const leftLine =
-    left.kind === "unmapped-change" ? left.line : (left.lines[0] ?? 0);
-  const rightLine =
-    right.kind === "unmapped-change" ? right.line : (right.lines[0] ?? 0);
-  if (leftLine !== rightLine) return leftLine - rightLine;
-  return left.kind < right.kind ? -1 : 1;
+  }
+  const byLine = firstLine(left) - firstLine(right);
+  if (byLine !== 0) return byLine;
+  if (left.kind !== right.kind) return left.kind < right.kind ? -1 : 1;
+  if (left.snapshot !== right.snapshot) {
+    return left.snapshot < right.snapshot ? -1 : 1;
+  }
+  // Same file, line, kind and snapshot: order by the whole site, so two ambiguous gaps
+  // spanning different declaration sets still sort deterministically.
+  const bySite = siteOf(left).localeCompare(siteOf(right));
+  return bySite;
+}
+
+/** The line a gap is anchored at. */
+function firstLine(gap: SeedGap): number {
+  return gap.kind === "unmapped-change" ? gap.line : (gap.lines[0] ?? 0);
+}
+
+/** Every line a gap names, as one comparable string. */
+function siteOf(gap: SeedGap): string {
+  return gap.kind === "unmapped-change"
+    ? String(gap.line)
+    : gap.lines.map(String).join(",");
 }
