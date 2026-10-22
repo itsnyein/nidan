@@ -139,7 +139,7 @@ export interface CallableIndex {
 }
 
 /**
- * Enumerates the callables omen can establish an identity for, across a snapshot.
+ * Enumerates the callables nidan can establish an identity for, across a snapshot.
  *
  * A declaration whose identity cannot be established is not an error and not a guess — it
  * is simply absent here, and the change that touched it becomes an `unmapped-change` gap
@@ -182,7 +182,7 @@ function hasNodeModulesSegment(relativePath: string): boolean {
  *
  * A duplicated key is dropped from `callables` rather than resolved. Picking one of two
  * declarations would be a guess, and a guessed identity produces a report about the wrong
- * code — worse than reporting that omen could not tell (§7.2).
+ * code — worse than reporting that nidan could not tell (§7.2).
  */
 function groupByKey(found: readonly Callable[]): CallableIndex {
   const byKey = new Map<string, Callable[]>();

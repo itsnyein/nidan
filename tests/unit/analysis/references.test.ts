@@ -638,7 +638,7 @@ async function throwawayCase(files: {
   base: Record<string, string>;
   head: Record<string, string>;
 }): Promise<string> {
-  const caseDir = await mkdtemp(join(tmpdir(), "omen-references-"));
+  const caseDir = await mkdtemp(join(tmpdir(), "nidan-references-"));
   cleanups.push(() => rm(caseDir, { recursive: true, force: true }));
   for (const [snapshot, entries] of Object.entries(files)) {
     await mkdir(join(caseDir, snapshot), { recursive: true });

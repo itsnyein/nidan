@@ -30,7 +30,7 @@ const CASES = 40;
  * Opt-in rather than opt-out: a developer who has never heard of this flag gets a fast
  * suite, and the one place that must never skip it is the one place that sets it.
  */
-const RANDOMIZED = process.env["OMEN_RANDOMIZED"] === "1";
+const RANDOMIZED = process.env["NIDAN_RANDOMIZED"] === "1";
 
 const cleanups: Array<() => Promise<void>> = [];
 
@@ -230,7 +230,7 @@ function generateCase(random: Random): Generated {
 async function chainFor(
   generated: Generated,
 ): Promise<{ diff: DiffResult; result: SeedResult }> {
-  const caseDir = await mkdtemp(join(tmpdir(), "omen-rand-"));
+  const caseDir = await mkdtemp(join(tmpdir(), "nidan-rand-"));
   cleanups.push(() => rm(caseDir, { recursive: true, force: true }));
   for (const [snapshot, contents] of [
     ["base", generated.base],
@@ -263,7 +263,7 @@ async function chainFor(
 }
 
 async function runCase(generated: Generated): Promise<void> {
-  const caseDir = await mkdtemp(join(tmpdir(), "omen-rand-"));
+  const caseDir = await mkdtemp(join(tmpdir(), "nidan-rand-"));
   cleanups.push(() => rm(caseDir, { recursive: true, force: true }));
   for (const [snapshot, contents] of [
     ["base", generated.base],
@@ -299,14 +299,14 @@ describe("the randomized suite is not silently disabled", () => {
   it("runs whenever CI runs", () => {
     // Asserts the condition the suite actually runs under, not merely that the workflow
     // mentions the variable: a workflow-level grep would pass while the tests skipped for
-    // some other reason. If CI ever stops setting `OMEN_RANDOMIZED=1`, this fails there
+    // some other reason. If CI ever stops setting `NIDAN_RANDOMIZED=1`, this fails there
     // and stays quiet locally.
     //
     // Without it, gating would be a textbook structural defect (`decisions.md` §7a): the
     // suite could stop checking anything and still report success.
     expect(
       process.env["CI"] === undefined || RANDOMIZED,
-      "CI must set OMEN_RANDOMIZED=1 — the randomized suite must never silently stop running",
+      "CI must set NIDAN_RANDOMIZED=1 — the randomized suite must never silently stop running",
     ).toBe(true);
   });
 });

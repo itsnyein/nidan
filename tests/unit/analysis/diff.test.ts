@@ -114,7 +114,7 @@ describe("renames", () => {
     base: Record<string, string>;
     head: Record<string, string>;
   }): Promise<string> {
-    const caseDir = await mkdtemp(join(tmpdir(), "omen-diff-case-"));
+    const caseDir = await mkdtemp(join(tmpdir(), "nidan-diff-case-"));
     cleanups.push(() => rm(caseDir, { recursive: true, force: true }));
     for (const [snapshot, entries] of Object.entries(files)) {
       for (const [path, contents] of Object.entries(entries)) {
@@ -141,7 +141,7 @@ describe("renames", () => {
       const result = await diffCommits(repo.path, repo.baseSha, repo.headSha);
 
       // Identical content at a different path is exactly what Git's rename detection
-      // would collapse into one entry. omen must not let it: the path is part of a
+      // would collapse into one entry. nidan must not let it: the path is part of a
       // callable's structural key, so a rename cannot be matched and is a documented
       // limitation. A collapsed rename would promise a match the identity model cannot
       // honour.
@@ -193,7 +193,7 @@ describe("hunk ranges", () => {
       // Separated edits, asserted exactly. The previous version of this test required
       // only "at least one hunk with positive starts", which an implementation that
       // returned just the first hunk would have satisfied.
-      const caseDir = await mkdtemp(join(tmpdir(), "omen-diff-case-"));
+      const caseDir = await mkdtemp(join(tmpdir(), "nidan-diff-case-"));
       cleanups.push(() => rm(caseDir, { recursive: true, force: true }));
       const lines = (first: string, last: string): string =>
         [

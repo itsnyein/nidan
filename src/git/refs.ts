@@ -64,7 +64,7 @@ export async function resolveCommit(
 /**
  * The best common ancestor of two commits.
  *
- * omen compares `merge-base(base, head)` against `head` so that a report shows what the
+ * nidan compares `merge-base(base, head)` against `head` so that a report shows what the
  * head branch changed, not what the base branch moved on to — the same diff a pull
  * request shows.
  */

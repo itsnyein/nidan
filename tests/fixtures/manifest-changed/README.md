@@ -1,6 +1,6 @@
 # manifest-changed
 
-**Proves:** when `package.json` dependencies differ between the two refs, omen warns and
+**Proves:** when `package.json` dependencies differ between the two refs, nidan warns and
 names the changed packages, but the run stays `ok`.
 
 `head/package.json` adds `ms`; `left-pad` is unchanged in both. Only `ms` is expected in

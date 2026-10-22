@@ -56,7 +56,7 @@ async function fixtureRepo(name: string): Promise<string> {
   return repo.path;
 }
 
-describe("omen end to end", () => {
+describe("nidan end to end", () => {
   it(
     "analyzes a repository and exits 0 with JSON",
     async () => {
@@ -255,7 +255,7 @@ describe("omen end to end", () => {
       );
 
       expect(result.code).toBe(2);
-      expect(result.stderr).toContain("omen:");
+      expect(result.stderr).toContain("nidan:");
     },
     TIMEOUT_MS,
   );
@@ -266,7 +266,7 @@ describe("omen end to end", () => {
       const result = await runCli(["base", "head"], resolve("/"));
 
       expect(result.code).toBe(2);
-      expect(result.stderr).toContain("omen:");
+      expect(result.stderr).toContain("nidan:");
     },
     TIMEOUT_MS,
   );

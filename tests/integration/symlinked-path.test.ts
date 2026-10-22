@@ -62,7 +62,7 @@ async function linkedRepo(
   const repo = await createFixtureRepo(join("tests", "fixtures", name));
   cleanups.push(repo.cleanup);
 
-  const linkRoot = await mkdtemp(join(tmpdir(), "omen-link-"));
+  const linkRoot = await mkdtemp(join(tmpdir(), "nidan-link-"));
   cleanups.push(() => rm(linkRoot, { recursive: true, force: true }));
   const linked = join(linkRoot, "repo-link");
   await symlink(repo.path, linked, "junction");
@@ -108,7 +108,7 @@ describe("analysis through a symlinked path", () => {
     "resolves a relative --config against a symlinked --directory",
     async () => {
       // The exact T1.4 repro. Note the `-C`: running *from* a symlinked directory proves
-      // nothing, because Node resolves the path before omen ever sees it. The link has to
+      // nothing, because Node resolves the path before nidan ever sees it. The link has to
       // arrive as an argument. Git then reports the repository root resolved, so a config
       // resolved against the unresolved link looks like it sits outside the repository
       // and the run exits 2.

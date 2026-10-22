@@ -19,7 +19,7 @@ breaks the core guarantee outright.
 
 ## Decision
 
-omen never emits an edge it cannot support with compiler evidence. Anything that cannot be
+nidan never emits an edge it cannot support with compiler evidence. Anything that cannot be
 statically confirmed becomes an **`AnalysisGap`**: a typed record of what could not be
 determined, where, and why.
 

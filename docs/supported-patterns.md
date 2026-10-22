@@ -2,9 +2,9 @@
 
 > **Status: specified, not yet implemented.** See [Documentation status](README.md#documentation-status).
 
-This page defines what omen resolves with compiler evidence. The [core guarantee](concepts.md#core-guarantee) applies within these patterns, and only within them. Anything outside is covered in [Limitations](limitations.md).
+This page defines what nidan resolves with compiler evidence. The [core guarantee](concepts.md#core-guarantee) applies within these patterns, and only within them. Anything outside is covered in [Limitations](limitations.md).
 
-omen supports single-package projects containing `.js`, `.jsx`, `.ts`, and `.tsx` files.
+nidan supports single-package projects containing `.js`, `.jsx`, `.ts`, and `.tsx` files.
 
 ## Callables that can be seeds
 
@@ -41,7 +41,7 @@ Each reported usage carries one relation.
 | `jsx-render`      | `<Comp />`, `<UI.Card />` — intrinsic elements and fragments are excluded                                                |
 | `value-reference` | A callable used as a value: passed as an argument, given as a prop, placed in an array, assigned, or handed to a wrapper |
 
-A `value-reference` records the immediate use only. omen does not follow the value any further — see [value flow is not followed](limitations.md#value-flow-is-not-followed).
+A `value-reference` records the immediate use only. nidan does not follow the value any further — see [value flow is not followed](limitations.md#value-flow-is-not-followed).
 
 ```tsx
 const Row = () => <button onClick={handleSave} />; // value-reference on handleSave
@@ -83,7 +83,7 @@ npm, pnpm, and yarn `node_modules` layouts are supported, including pnpm's symli
 
 ### Within a snapshot
 
-omen uses the canonical compiler symbol. Aliases, imports, and re-exports resolve back to the original declaration, so the same callable reached by different paths is one symbol.
+nidan uses the canonical compiler symbol. Aliases, imports, and re-exports resolve back to the original declaration, so the same callable reached by different paths is one symbol.
 
 Overload signatures and their implementation form a single logical callable.
 
@@ -91,7 +91,7 @@ Overload signatures and their implementation form a single logical callable.
 
 ### Matching base against head
 
-To tell whether a callable was added, deleted, or modified, omen matches declarations across the two snapshots with a structural key:
+To tell whether a callable was added, deleted, or modified, nidan matches declarations across the two snapshots with a structural key:
 
 ```text
 relativePosixPath :: containerChain :: declarationKind :: name [:: static]
@@ -135,7 +135,7 @@ Keying these differently would report the change as a deletion plus an addition,
 usage report — the thing you most want when changing a declaration — would be split across
 two entries drawn from different snapshots.
 
-If one snapshot contains the same key twice, omen does **not** match the declarations. It emits an `ambiguous-identity` gap rather than guessing which is which.
+If one snapshot contains the same key twice, nidan does **not** match the declarations. It emits an `ambiguous-identity` gap rather than guessing which is which.
 
 ### Constructors
 
@@ -149,7 +149,7 @@ A diff hunk that overlaps any part of a callable's full range makes that callabl
 
 ### Formatting filter
 
-omen compares the base and head token streams of the callable, ignoring exactly two
+nidan compares the base and head token streams of the callable, ignoring exactly two
 things:
 
 - **whitespace**, and
@@ -170,20 +170,20 @@ Comment changes, including JSDoc and pragma comments, **do** count as a modifica
 
 - **Only the innermost supported callable is seeded.** When a change sits inside a nested function, the outer function is not seeded for it; the outer function's dependency shows up as a usage of the inner one.
 - A change inside an **unsupported** callable, such as an anonymous callback, seeds the nearest enclosing supported callable.
-- A change inside a callable whose [identity is ambiguous](limitations.md#duplicate-identity-keys-stop-matching) does the same: that callable is skipped, attribution continues outward to the next enclosing supported callable, and the ambiguous-identity gap is reported as well. Seeding a callable omen cannot identify would attribute the change to one of two declarations arbitrarily.
+- A change inside a callable whose [identity is ambiguous](limitations.md#duplicate-identity-keys-stop-matching) does the same: that callable is skipped, attribution continues outward to the next enclosing supported callable, and the ambiguous-identity gap is reported as well. Seeding a callable nidan cannot identify would attribute the change to one of two declarations arbitrarily.
 - A hunk that maps to no callable produces an `unmapped-change` gap. This covers top-level statements, type and interface declarations, getters and setters, and any code with no enclosing callable.
 - An **overload set** owns each declaration's own range, not the span from its first signature to its last. Ambient `declare function` overloads need not be contiguous, so a statement written between two signatures belongs to no callable and is reported as a gap.
 
 ### Insertions, deletions, and where a change belongs
 
-A diff can describe a change as a _position between two lines_ rather than a span — that is how Git reports a pure insertion or deletion. omen reads such a position as belonging to a callable only when **both** adjacent lines lie inside that same callable.
+A diff can describe a change as a _position between two lines_ rather than a span — that is how Git reports a pure insertion or deletion. nidan reads such a position as belonging to a callable only when **both** adjacent lines lie inside that same callable.
 
 - A line inserted inside a function body belongs to that function, and seeds it.
 - A line inserted **between** two functions belongs to neither, and is reported as an `unmapped-change` gap. It is never attributed to an unchanged neighbour, which would report a function as changed when its own text did not change.
 
 ### One change, one gap
 
-A single hunk can change a callable **and** text that belongs to no callable. omen reports both: the callable is seeded _and_ an `unmapped-change` gap names the uncovered lines. The hunk itself is counted once.
+A single hunk can change a callable **and** text that belongs to no callable. nidan reports both: the callable is seeded _and_ an `unmapped-change` gap names the uncovered lines. The hunk itself is counted once.
 
 Each contiguous run of uncovered lines gets its own gap, so a hunk leaving two separate regions unaccounted for produces two gaps rather than naming only the first.
 
@@ -206,7 +206,7 @@ Files that are not JavaScript or TypeScript are ignored; only their count appear
 
 ## How usages are found
 
-For each seed, omen asks the TypeScript compiler for references within the usage-source snapshot.
+For each seed, nidan asks the TypeScript compiler for references within the usage-source snapshot.
 
 These occurrences are found but are **not** usages, and are filtered out:
 

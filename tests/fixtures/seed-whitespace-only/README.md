@@ -5,7 +5,7 @@
 `total` is rewrapped across several lines. The token streams compare equal once whitespace
 is removed, so it is not a seed and the expectation is empty.
 
-This is the case that makes omen usable after a formatter runs. Without the filter, a
+This is the case that makes nidan usable after a formatter runs. Without the filter, a
 Prettier upgrade would seed every callable in the repository and bury every real change.
 
 Note this case also depends on the fixture harness hashing files from content: `calc.ts`

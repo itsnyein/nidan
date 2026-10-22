@@ -1,5 +1,5 @@
 {
-  "name": "omen",
+  "name": "nidan",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -10,7 +10,7 @@
   },
   "packageManager": "pnpm@11.28.4",
   "bin": {
-    "omen": "./dist/cli.js"
+    "nidan": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsup",

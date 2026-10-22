@@ -5,7 +5,7 @@
 
 ## Context
 
-omen has three public surfaces that change for different reasons and at different rates:
+nidan has three public surfaces that change for different reasons and at different rates:
 the CLI, the JSON report, and the human-readable text output.
 
 Tying them to one version number forces false coupling. A bug fix would imply a schema

@@ -502,7 +502,7 @@ function innermostOwners(
  * A line with no unique-identity owner is not automatically unaccounted for: if it lies
  * inside a callable whose key collides, the `ambiguous-identity` gap already describes
  * that code (§8.2, pre-ruling 3 of 2026-10-21). Reporting it again as an unmapped change
- * would claim omen could not map something it mapped and then declined to seed.
+ * would claim nidan could not map something it mapped and then declined to seed.
  */
 function bucketFor(
   owners: readonly string[],

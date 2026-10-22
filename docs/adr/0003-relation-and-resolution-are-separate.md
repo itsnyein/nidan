@@ -12,7 +12,7 @@ The questions are independent:
 
 1. **What is the code doing?** Calling, constructing, rendering as JSX, or passing the
    callable around as a value.
-2. **How sure is omen that this is the right symbol?** The reference resolved directly, or
+2. **How sure is nidan that this is the right symbol?** The reference resolved directly, or
    it resolved to a group of related symbols such as an interface member and its
    implementations.
 
@@ -30,7 +30,7 @@ symbol, `ambiguous` when it resolves to a related-symbol group or to more than o
 candidate, with the candidates listed.
 
 Within the resolution object, `resolution.status` is stable public contract while
-`resolution.mechanism` is marked experimental, so how omen arrived at an answer can change
+`resolution.mechanism` is marked experimental, so how nidan arrived at an answer can change
 without a breaking change.
 
 ## Consequences
@@ -53,9 +53,9 @@ without a breaking change.
 `maybe-construct`, …). Rejected: the value count doubles, filtering on either axis means
 matching a list of names, and adding a third relation adds two values.
 
-**A numeric confidence score.** Rejected because omen reports compiler evidence, not
+**A numeric confidence score.** Rejected because nidan reports compiler evidence, not
 estimates. There is no principled way to say 0.7, and a score invites consumers to invent
-thresholds omen cannot justify.
+thresholds nidan cannot justify.
 
 **Resolution as a boolean `exact: true | false`.** Close, and simpler. Rejected because
 `ambiguous` needs to carry the candidate list — a boolean has nowhere to put it.

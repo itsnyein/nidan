@@ -13,7 +13,7 @@ src/dup.js :: :: function :: handle
 
 The expectation is **no seed and one gap**. Picking either declaration would be a guess,
 and a guessed identity produces a report about the wrong code, which is worse than
-reporting that omen could not tell.
+reporting that nidan could not tell.
 
 JavaScript rather than TypeScript deliberately: TypeScript rejects the redeclaration, so
 the collision would never reach identity matching.

@@ -5,7 +5,7 @@
 
 ## Context
 
-omen reads everything it analyzes through Git, so what Git says _is_ the input to
+nidan reads everything it analyzes through Git, so what Git says _is_ the input to
 analysis. Git is configurable to a degree that makes this dangerous: the same two commits
 can produce different output, or no output, depending on the machine.
 
@@ -35,7 +35,7 @@ per command family, and never inherited.**
 - `src/git/exec.ts` applies global options to every invocation — `--literal-pathspecs`,
   `--no-optional-locks`, `core.quotePath=false` — and **drops the entire `GIT_*`
   environment** from child processes.
-- `src/git/diff.ts` is the only way omen asks for a diff. It pins `--no-ext-diff`,
+- `src/git/diff.ts` is the only way nidan asks for a diff. It pins `--no-ext-diff`,
   `--no-textconv`, `--text`, `--no-color`, `--no-renames`, `--unified=0`,
   `--inter-hunk-context=0`, `--diff-algorithm=myers`, and `--no-indent-heuristic`.
 
@@ -57,11 +57,11 @@ test uses.
 
 - The same two commits produce the same hunks on every machine, which is what the
   determinism guarantee requires of an input, not just of the report.
-- omen cannot be made to run a program through Git configuration or the environment,
+- nidan cannot be made to run a program through Git configuration or the environment,
   which A4 and A7 require.
 - A project's own diff preferences are ignored. Someone who has configured
   `diff.algorithm=histogram` because they prefer its output will not see it reflected
-  here. That is intended: omen's output is a contract, not a rendering.
+  here. That is intended: nidan's output is a contract, not a rendering.
 - New Git commands must be added through the shared helpers. A direct `execFile("git",
 ...)` would bypass every pin, which is why there is one entry point rather than a
   convention.
@@ -76,7 +76,7 @@ interface, are visible in the command, and cannot be silently overridden by a
 higher-precedence source the way a `-c` can be by a command-line flag elsewhere.
 
 **Deny-list the known-dangerous environment variables.** Smaller change, and preserves
-anything legitimate in `GIT_*`. Rejected: nothing in `GIT_*` is legitimate for omen —
+anything legitimate in `GIT_*`. Rejected: nothing in `GIT_*` is legitimate for nidan —
 every variable either redirects the repository or changes output — and a denylist silently
 stops being complete when Git adds a variable.
 

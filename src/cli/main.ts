@@ -52,7 +52,7 @@ async function main(argv: readonly string[]): Promise<number> {
     // pipeline cannot read "zero usages" as "safe".
     return report.run.status === "failed" ? EXIT_FAILED : EXIT_OK;
   } catch (error) {
-    process.stderr.write(`omen: ${messageFor(error)}\n`);
+    process.stderr.write(`nidan: ${messageFor(error)}\n`);
     return exitCodeFor(error);
   }
 }

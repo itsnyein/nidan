@@ -28,7 +28,7 @@ export function createProgram(
 ): Command {
   return (
     new Command()
-      .name("omen")
+      .name("nidan")
       .description(packageJson.description)
       .version(packageJson.version)
       .argument("<base>", "ref to compare from")

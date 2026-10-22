@@ -23,8 +23,8 @@ const execFileAsync = promisify(execFile);
  * repository byte-identical on every machine and every run.
  */
 const FIXTURE_AUTHOR = {
-  name: "omen fixtures",
-  email: "fixtures@omen.invalid",
+  name: "nidan fixtures",
+  email: "fixtures@nidan.invalid",
   date: "2000-01-01T00:00:00Z",
 } as const;
 
@@ -32,7 +32,7 @@ const BASE_REF = "base";
 const HEAD_REF = "head";
 
 /** Where a template records its commit SHAs, so copies need not re-run `git`. */
-const REFS_FILE = "omen-refs.json";
+const REFS_FILE = "nidan-refs.json";
 
 /** Copied into `<repo>/node_modules` after the commits, never committed. */
 const NODE_MODULES_DIR = "node_modules";
@@ -119,7 +119,7 @@ export async function createFixtureRepo(caseDir: string): Promise<FixtureRepo> {
   }
   const templateRoot = await template;
 
-  const root = await mkdtemp(join(tmpdir(), "omen-fixture-"));
+  const root = await mkdtemp(join(tmpdir(), "nidan-fixture-"));
   const repoPath = join(root, "repo");
   const cleanup = async (): Promise<void> => {
     await rm(root, { recursive: true, force: true });
@@ -174,7 +174,7 @@ async function buildTemplate(
   baseDir: string,
   headDir: string,
 ): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "omen-template-"));
+  const root = await mkdtemp(join(tmpdir(), "nidan-template-"));
   const repoPath = join(root, "repo");
   const homePath = join(root, "home");
 

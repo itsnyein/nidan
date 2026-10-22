@@ -9,9 +9,9 @@ Two different TypeScript versions are present in this project, and conflating th
 be a real source of confusion.
 
 - **The analysis TypeScript** is the copy bundled inside ts-morph. It is what parses and
-  type-checks the repository under analysis, so it determines what omen reports.
+  type-checks the repository under analysis, so it determines what nidan reports.
 - **The development TypeScript** is the `typescript` devDependency, used to typecheck and
-  lint omen's own source. It has no effect on any result.
+  lint nidan's own source. It has no effect on any result.
 
 They already differ. At the time of writing, ts-morph 28.0.0 bundles TypeScript 6.0.2 and
 the development dependency is 6.0.3.
@@ -43,7 +43,7 @@ right.
 - The two versions drifting apart is normal and not a defect to chase.
 - Development tooling can lag the newest TypeScript without holding back analysis, and
   vice versa.
-- omen cannot analyze code using syntax newer than the bundled compiler understands, no
+- nidan cannot analyze code using syntax newer than the bundled compiler understands, no
   matter what the development dependency is.
 - A ts-morph upgrade needs the full fixture suite as its regression check, since output
   may legitimately change.
@@ -57,7 +57,7 @@ supported range dictate the analysis compiler, which is backwards.
 **Use the project-under-analysis's own TypeScript from its `node_modules`.** Arguably the
 most faithful, since it is the compiler that project actually uses. Rejected for Phase 1:
 results would vary by target repository, determinism across machines would weaken, and
-omen would be loading and executing a compiler chosen by the analyzed repository — a
+nidan would be loading and executing a compiler chosen by the analyzed repository — a
 meaningful change to the security boundary.
 
 **Pin only the development version and float ts-morph.** Rejected: it is exactly backwards.

@@ -144,7 +144,7 @@ describe("a default-exported function is a container for what it holds", () => {
 describe("dependency exclusion is relative to the repository", () => {
   it("keeps project files when the checkout path itself contains node_modules", () => {
     // Someone whose repository sits under a directory called `node_modules` — a vendored
-    // checkout, a test harness — would otherwise have every callable excluded, and omen
+    // checkout, a test harness — would otherwise have every callable excluded, and nidan
     // would report an empty analysis rather than an error.
     const project = new Project({ useInMemoryFileSystem: true });
     project.createSourceFile(

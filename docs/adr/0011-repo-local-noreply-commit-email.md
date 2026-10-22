@@ -5,7 +5,7 @@
 
 ## Context
 
-The first push to `itsnyein/omen` was rejected:
+The first push to `itsnyein/nidan` was rejected:
 
 ```
 GH007: Your push would publish a private email address

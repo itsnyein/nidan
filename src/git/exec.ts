@@ -34,7 +34,7 @@ export const GIT_GLOBAL_ARGS: readonly string[] = [
  *
  * Every inherited `GIT_*` variable is dropped. Some redirect the repository outright
  * (`GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`); others change what a diff reports or
- * run a program to produce it (`GIT_EXTERNAL_DIFF`, `GIT_DIFF_OPTS`). omen must analyze
+ * run a program to produce it (`GIT_EXTERNAL_DIFF`, `GIT_DIFF_OPTS`). nidan must analyze
  * the repository it was pointed at, identically on every machine, and must never execute
  * a program the environment chose — so the whole namespace goes rather than a denylist
  * that a future Git release can outgrow.

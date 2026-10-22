@@ -2,7 +2,7 @@
 
 > **Status: specified, not yet implemented.** See [Documentation status](README.md#documentation-status).
 
-omen produces two output formats: `text` for reading, and `json` for machines.
+nidan produces two output formats: `text` for reading, and `json` for machines.
 
 The JSON report is [public contract](README.md#what-is-public-contract). Text output is not — its wording and layout may change in any release, so automation must read JSON.
 
@@ -43,7 +43,7 @@ Every usage records its origin: the enclosing supported callable, or the [module
 
 ## Gap kinds
 
-A gap records something static analysis could not confirm. **A gap is never an edge** — omen reports uncertainty rather than guessing a relationship.
+A gap records something static analysis could not confirm. **A gap is never an edge** — nidan reports uncertainty rather than guessing a relationship.
 
 | Kind                             | Condition                                                               |
 | -------------------------------- | ----------------------------------------------------------------------- |
@@ -63,7 +63,7 @@ Gaps attributable to a seed appear under that seed. Gaps that cannot be attribut
 
 ## Zero results
 
-When no usage is found, omen does not report "no impact". It reports **"No static usages found"** together with the relevant gap count.
+When no usage is found, nidan does not report "no impact". It reports **"No static usages found"** together with the relevant gap count.
 
 The distinction matters: finding nothing statically is not evidence of safety. See [what a result means](concepts.md#what-a-result-means).
 
