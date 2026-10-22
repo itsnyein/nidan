@@ -70,28 +70,44 @@ can be tightened deliberately.
 
 ## Cases
 
-| Case                                                                             | Proves                                                           |
-| -------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| [`overlay-basic`](overlay-basic/README.md)                                       | Each snapshot is served from its own Git objects                 |
-| [`config-tsconfig`](config-tsconfig/README.md)                                   | A real `tsconfig.json` is discovered and used                    |
-| [`config-jsconfig-paths`](config-jsconfig-paths/README.md)                       | `jsconfig.json` `paths` aliases resolve                          |
-| [`config-absent`](config-absent/README.md)                                       | A missing config degrades the run, and says why                  |
-| [`manifest-changed`](manifest-changed/README.md)                                 | A dependency change warns without degrading                      |
-| [`layout-npm`](layout-npm/README.md)                                             | Types resolve under a flat npm layout                            |
-| [`layout-yarn`](layout-yarn/README.md)                                           | Types resolve with a nested transitive dependency                |
-| [`layout-pnpm`](layout-pnpm/README.md)                                           | Types resolve through pnpm's symlinked layout                    |
-| [`leak-uncommitted`](leak-uncommitted/README.md)                                 | A self-contained proof that the work tree is invisible           |
-| [`identity-overload`](identity-overload/README.md)                               | Overloads and their implementation are one callable              |
-| [`identity-nested`](identity-nested/README.md)                                   | The container chain separates same-named nested functions        |
-| [`identity-nested-two-level`](identity-nested-two-level/README.md)               | A container chain two levels deep, separated by `.`              |
-| [`identity-nested-static-collision`](identity-nested-static-collision/README.md) | The static marker is not in the chain, so nested names collide   |
-| [`identity-default-exports`](identity-default-exports/README.md)                 | Named, anonymous, and aliased default exports each key correctly |
-| [`identity-re-export`](identity-re-export/README.md)                             | A barrel re-export does not create a second identity             |
-| [`identity-static-vs-instance`](identity-static-vs-instance/README.md)           | The static marker separates a static from an instance method     |
-| [`identity-constructor`](identity-constructor/README.md)                         | A constructor resolves through its class, including `super()`    |
-| [`identity-collision`](identity-collision/README.md)                             | A duplicate key is reported, never guessed                       |
-| [`seed-whitespace-only`](seed-whitespace-only/README.md)                         | Reformatting alone produces no seed                              |
-| [`seed-comment-change`](seed-comment-change/README.md)                           | A comment change is a modification                               |
-| [`seed-declaration-form-change`](seed-declaration-form-change/README.md)         | The declaration form does not affect the key                     |
-| [`seed-added-deleted`](seed-added-deleted/README.md)                             | Added, deleted, and untouched classified in one diff             |
-| [`seed-unmapped-change`](seed-unmapped-change/README.md)                         | A change mapping to no callable becomes a gap                    |
+| Case                                                                               | Proves                                                           |
+| ---------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| [`overlay-basic`](overlay-basic/README.md)                                         | Each snapshot is served from its own Git objects                 |
+| [`config-tsconfig`](config-tsconfig/README.md)                                     | A real `tsconfig.json` is discovered and used                    |
+| [`config-jsconfig-paths`](config-jsconfig-paths/README.md)                         | `jsconfig.json` `paths` aliases resolve                          |
+| [`config-absent`](config-absent/README.md)                                         | A missing config degrades the run, and says why                  |
+| [`manifest-changed`](manifest-changed/README.md)                                   | A dependency change warns without degrading                      |
+| [`layout-npm`](layout-npm/README.md)                                               | Types resolve under a flat npm layout                            |
+| [`layout-yarn`](layout-yarn/README.md)                                             | Types resolve with a nested transitive dependency                |
+| [`layout-pnpm`](layout-pnpm/README.md)                                             | Types resolve through pnpm's symlinked layout                    |
+| [`leak-uncommitted`](leak-uncommitted/README.md)                                   | A self-contained proof that the work tree is invisible           |
+| [`identity-overload`](identity-overload/README.md)                                 | Overloads and their implementation are one callable              |
+| [`identity-nested`](identity-nested/README.md)                                     | The container chain separates same-named nested functions        |
+| [`identity-nested-two-level`](identity-nested-two-level/README.md)                 | A container chain two levels deep, separated by `.`              |
+| [`identity-nested-static-collision`](identity-nested-static-collision/README.md)   | The static marker is not in the chain, so nested names collide   |
+| [`identity-default-exports`](identity-default-exports/README.md)                   | Named, anonymous, and aliased default exports each key correctly |
+| [`identity-re-export`](identity-re-export/README.md)                               | A barrel re-export does not create a second identity             |
+| [`identity-static-vs-instance`](identity-static-vs-instance/README.md)             | The static marker separates a static from an instance method     |
+| [`identity-constructor`](identity-constructor/README.md)                           | A constructor resolves through its class, including `super()`    |
+| [`identity-collision`](identity-collision/README.md)                               | A duplicate key is reported, never guessed                       |
+| [`seed-whitespace-only`](seed-whitespace-only/README.md)                           | Reformatting alone produces no seed                              |
+| [`seed-comment-change`](seed-comment-change/README.md)                             | A comment change is a modification                               |
+| [`seed-declaration-form-change`](seed-declaration-form-change/README.md)           | The declaration form does not affect the key                     |
+| [`seed-added-deleted`](seed-added-deleted/README.md)                               | Added, deleted, and untouched classified in one diff             |
+| [`seed-unmapped-change`](seed-unmapped-change/README.md)                           | A change mapping to no callable becomes a gap                    |
+| [`seed-mixed-hunk`](seed-mixed-hunk/README.md)                                     | One hunk yields both a seed and a gap                            |
+| [`seed-overload-hull-gap`](seed-overload-hull-gap/README.md)                       | An overload set owns each declaration, not the hull              |
+| [`seed-declaration-keyword`](seed-declaration-keyword/README.md)                   | The declaration keyword is part of every declarator's signature  |
+| [`seed-declaration-keyword-one-line`](seed-declaration-keyword-one-line/README.md) | The same rule with both declarators on one line                  |
+| [`seed-boundary-insert-between`](seed-boundary-insert-between/README.md)           | An insertion between two functions belongs to neither            |
+| [`seed-boundary-delete-between`](seed-boundary-delete-between/README.md)           | A deletion between two functions belongs to neither              |
+| [`seed-boundary-insert-body-first`](seed-boundary-insert-body-first/README.md)     | An insertion inside a body seeds that callable                   |
+| [`seed-boundary-insert-body-last`](seed-boundary-insert-body-last/README.md)       | The same at a body's closing edge                                |
+| [`usage-equivalence-ts`](usage-equivalence-ts/README.md)                           | A changed function has one usage, from its caller                |
+| [`usage-equivalence-tsx`](usage-equivalence-tsx/README.md)                         | The same case in `.tsx` reports the same usage                   |
+| [`usage-equivalence-js`](usage-equivalence-js/README.md)                           | The same case in `.js` reports the same usage                    |
+| [`usage-equivalence-jsx`](usage-equivalence-jsx/README.md)                         | The same case in `.jsx` reports the same usage                   |
+| [`usage-cross-ts-uses-js`](usage-cross-ts-uses-js/README.md)                       | A JavaScript callable used from TypeScript resolves exactly      |
+| [`usage-cross-js-uses-ts`](usage-cross-js-uses-ts/README.md)                       | A TypeScript callable used from JavaScript resolves exactly      |
+| [`usage-barrel-two-hops`](usage-barrel-two-hops/README.md)                         | Two re-export hops still yield one usage                         |
+| [`usage-constructor-cross-file`](usage-constructor-cross-file/README.md)           | `new` and a subclass `super()` in separate modules               |
