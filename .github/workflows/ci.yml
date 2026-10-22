@@ -58,16 +58,51 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Test
-        # The randomized suite builds 40 Git repositories, so it is opt-in locally to
-        # keep iteration fast. CI always opts in, and a test asserts that: if this
-        # variable is ever dropped, `the randomized suite is not silently disabled`
-        # fails here rather than the suite quietly shrinking.
+        # Everything except the randomized suite, which has its own job below with its
+        # own time budget. Excluding it here is what keeps the 30 s per-test threshold
+        # usable: one legitimate multi-minute outlier inside this run would hide every
+        # other breach behind it.
         env:
-          OMEN_RANDOMIZED: "1"
+          OMEN_EXCLUDE_RANDOMIZED: "1"
         run: pnpm test
       - run: pnpm build
       - name: Smoke-run the built CLI
         run: node dist/cli.js --version
+
+  randomized:
+    name: Randomized suite (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # Its own budget. The suite builds 40 Git repositories inside one test and takes
+    # minutes; the 30 s per-test threshold does not apply to it and applies to everything
+    # else unchanged. Thirty minutes is a runaway guard, not a target — the measured cost
+    # is ~2 minutes on an idle machine.
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # Ubuntu and Windows only, on the Active LTS. What this suite exercises is
+        # line-accounting logic, but it does it by building real repositories, and Git's
+        # index behaves differently on Windows — that difference has produced real
+        # defects before, so Windows stays. macOS is omitted because it bills at ten
+        # times the rate and adds no coverage this suite depends on.
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@d9184bf108216479bc5a137cc391f4d7b14c870b # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Randomized suite
+        # The suite is opt-in locally to keep iteration fast. CI always opts in, and a
+        # test asserts it: if this variable is ever dropped, `the randomized suite is not
+        # silently disabled` fails here rather than the suite quietly shrinking. That
+        # guard is unaffected by the split — it lives in this file, which only this job
+        # runs.
+        env:
+          OMEN_RANDOMIZED: "1"
+        run: pnpm test:randomized
 
   pr-title:
     name: PR title
@@ -96,7 +131,7 @@ jobs:
 
   ci-success:
     name: CI success
-    needs: [checks, test, pr-title]
+    needs: [checks, test, randomized, pr-title]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -104,11 +139,17 @@ jobs:
         env:
           CHECKS_RESULT: ${{ needs.checks.result }}
           TEST_RESULT: ${{ needs.test.result }}
+          RANDOMIZED_RESULT: ${{ needs.randomized.result }}
           PR_TITLE_RESULT: ${{ needs.pr-title.result }}
         run: |
           set -euo pipefail
-          echo "checks=$CHECKS_RESULT test=$TEST_RESULT pr-title=$PR_TITLE_RESULT"
+          echo "checks=$CHECKS_RESULT test=$TEST_RESULT randomized=$RANDOMIZED_RESULT pr-title=$PR_TITLE_RESULT"
           if [ "$CHECKS_RESULT" != "success" ] || [ "$TEST_RESULT" != "success" ]; then
+            exit 1
+          fi
+          # Required, not advisory: a skipped or failed randomized job is the suite
+          # silently shrinking, which is the thing its in-suite guard exists to prevent.
+          if [ "$RANDOMIZED_RESULT" != "success" ]; then
             exit 1
           fi
           # pr-title does not run on push events, so "skipped" is acceptable there.
