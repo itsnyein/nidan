@@ -111,6 +111,7 @@ function expectedUsages(name: string): string[] | undefined {
       seeds?: Array<{
         key: string;
         usages?: Array<{
+          relation: string;
           from: string;
           site: { file: string; line: number };
           resolution: { status: string };
@@ -125,7 +126,7 @@ function expectedUsages(name: string): string[] | undefined {
     .flatMap((seed) =>
       (seed.usages ?? []).map(
         (usage) =>
-          `${seed.key} | ${usage.from} | ${usage.site.file}:${String(usage.site.line)} | ${usage.resolution.status}`,
+          `${seed.key} | ${usage.relation} | ${usage.from} | ${usage.site.file}:${String(usage.site.line)} | ${usage.resolution.status}`,
       ),
     )
     .sort();
@@ -135,47 +136,10 @@ function actualUsages(result: ReferenceResult): string[] {
   return result.usages
     .map(
       (usage) =>
-        `${usage.seedKey} | ${usage.from} | ${usage.filePath}:${String(usage.line)} | ${usage.resolution.status}`,
+        `${usage.seedKey} | ${usage.relation} | ${usage.from} | ${usage.filePath}:${String(usage.line)} | ${usage.resolution.status}`,
     )
     .sort();
 }
-
-/**
- * Fixtures whose usage expectation states a ruling that is **not yet implemented**.
- *
- * Each entry is asserted to **fail** below, not skipped. A skip-list could hide a genuine
- * regression and would outlive its fix silently; asserting the current wrong behaviour
- * means the day the ruling lands, the `still` test fails and forces the entry out.
- */
-const PENDING_USAGES = new Map<string, string>([
-  [
-    "usage-constructor-implicit",
-    "the implicit-constructor heritage ruling is not implemented: the clause is reported as undecided rather than as a construct usage",
-  ],
-]);
-
-describe("rulings not yet implemented", () => {
-  it.each([...PENDING_USAGES])(
-    "%s still reports no usage at all",
-    async (name) => {
-      const outcome = await analyze(join("tests", "fixtures", name));
-
-      // The current behaviour, stated exactly. When the ruling lands this fails, which
-      // is the point: the entry cannot survive its own fix.
-      expect(actualUsages(outcome.result)).toEqual([]);
-      expect(
-        outcome.result.undecided.map(
-          (reference) =>
-            `${reference.reason} ${reference.filePath}:${String(reference.line)}`,
-        ),
-      ).toEqual(["implicit-constructor-heritage src/plain.ts:3"]);
-      // And the record it will be held to is not empty, so this is pending work rather
-      // than a fixture that expects nothing.
-      expect(expectedUsages(name)?.length).toBe(1);
-    },
-    TIMEOUT_MS,
-  );
-});
 
 describe("usages against the frozen fixtures", () => {
   // **Every** fixture, not only the ones whose records declare a usage. Keying on record
@@ -184,9 +148,7 @@ describe("usages against the frozen fixtures", () => {
   // "has at least one usage" removed exactly those from the check. A record that empties
   // itself would also have deleted its own assertion.
   const names = allFixtures();
-  const declaring = names
-    .filter((name) => expectedUsages(name) !== undefined)
-    .filter((name) => !PENDING_USAGES.has(name));
+  const declaring = names.filter((name) => expectedUsages(name) !== undefined);
 
   it("includes the fixtures that freeze an empty usage list", () => {
     // The property the enumeration exists for, asserted rather than assumed. A fixture
@@ -259,7 +221,7 @@ describe("the four equivalence variants agree", () => {
       for (const variant of normalized) expect(variant).toEqual(first);
       // Compared against the expectation too, so four identical wrong answers fail.
       expect(first).toEqual([
-        "src/greet.EXT :: :: function :: greet | src/use.EXT :: :: function :: report | src/use.EXT:4 | exact",
+        "src/greet.EXT :: :: function :: greet | invoke | src/use.EXT :: :: function :: report | src/use.EXT:4 | exact",
       ]);
     },
     TIMEOUT_MS * 4,
@@ -326,7 +288,7 @@ describe("a subclass with no explicit constructor", () => {
   };
 
   it(
-    "surfaces through the differential check instead of being filtered away",
+    "reports its extends clause as an implicit construct usage",
     async () => {
       const outcome = await analyze(
         await throwawayCase({
@@ -340,25 +302,22 @@ describe("a subclass with no explicit constructor", () => {
       );
 
       // `RetryingClient` declares no constructor, so there is no `super()` anywhere to
-      // carry the construction. Filtering the heritage clause here would leave the
-      // construction reported by nothing at all, which the ruling forbids in advance.
+      // carry the construction. The clause itself is the construction.
       expect(
-        outcome.result.undecided.map(
-          (reference) =>
-            `${reference.reason} ${reference.filePath}:${String(reference.line)}`,
+        outcome.result.usages.map(
+          (usage) =>
+            `${usage.relation} ${usage.filePath}:${String(usage.line)} from ${usage.from} implicit=${String(usage.implicit === true)}`,
         ),
-      ).toEqual(["implicit-constructor-heritage src/retry.ts:3"]);
+      ).toEqual([
+        "construct src/retry.ts:3 from src/retry.ts :: RetryingClient :: constructor :: constructor implicit=true",
+      ]);
+      // And the clause is not *also* filtered, which would report the construction twice
+      // if a later change started counting filtered clauses.
       expect(
         outcome.result.filtered.filter(
           (reference) => reference.reason === "heritage-clause",
         ),
       ).toEqual([]);
-      // And it is visible in the differential check rather than merely absent from it.
-      expect(
-        outcome.occurrences
-          .filter((occurrence) => occurrence.explanation.kind === "undecided")
-          .map((occurrence) => occurrence.filePath),
-      ).toEqual(["src/retry.ts"]);
     },
     TIMEOUT_MS,
   );
@@ -426,7 +385,8 @@ describe("a subclass with no explicit constructor", () => {
         }),
       );
 
-      expect(outcome.result.undecided).toEqual([]);
+      // No usage at all from `implements`: it is a type position, not a construction.
+      expect(outcome.result.usages).toEqual([]);
       expect(
         outcome.result.filtered
           .filter((reference) => reference.filePath === "src/fake.ts")
@@ -439,9 +399,10 @@ describe("a subclass with no explicit constructor", () => {
   it(
     "filters the clause once the subclass declares a constructor",
     async () => {
-      // The other half of the rule, on the same shape plus one constructor. Without this,
-      // "undecided" could be the answer for every heritage clause and the first test
-      // would still pass.
+      // The other half of the rule, on the same shape plus one constructor. Without
+      // this, "implicit construct usage" could be the answer for every heritage clause
+      // and the first test would still pass — and the construction would be reported
+      // twice, once at the clause and once at the `super()`.
       const withConstructor = {
         ...CONSTRUCTOR_CASE,
         "src/retry.ts":
@@ -458,7 +419,6 @@ describe("a subclass with no explicit constructor", () => {
         }),
       );
 
-      expect(outcome.result.undecided).toEqual([]);
       expect(
         outcome.result.filtered.filter(
           (reference) => reference.reason === "heritage-clause",
@@ -467,10 +427,10 @@ describe("a subclass with no explicit constructor", () => {
       expect(
         outcome.result.usages.map(
           (usage) =>
-            `${usage.filePath}:${String(usage.line)} from ${usage.from}`,
+            `${usage.relation} ${usage.filePath}:${String(usage.line)} from ${usage.from} implicit=${String(usage.implicit === true)}`,
         ),
       ).toEqual([
-        "src/retry.ts:5 from src/retry.ts :: RetryingClient :: constructor :: constructor",
+        "construct src/retry.ts:5 from src/retry.ts :: RetryingClient :: constructor :: constructor implicit=false",
       ]);
     },
     TIMEOUT_MS,
@@ -590,11 +550,100 @@ describe("the differential check can fail", () => {
         outcome.explain({ ...outcome.result, usages: [] }),
       );
 
+      // Two, not one. Dropping every usage drops the `super()` as well, so the `extends`
+      // clause loses its explanation too — the tripwire and the occurrence check are
+      // independent, and this mutation trips both.
+      expect(
+        unexplained
+          .map(
+            (occurrence) => `${occurrence.filePath}:${String(occurrence.line)}`,
+          )
+          .sort(),
+      ).toEqual(["src/retry.ts:3", "src/use.ts:4"]);
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "turns a lost super() detection into an unexplained extends clause",
+    async () => {
+      // The blind spot this tripwire closes. A `super()` site contains no textual
+      // occurrence of the class name, so dropping `super()` detection is invisible to an
+      // occurrence-based harness. The `extends` clause does carry the name, and being
+      // *filtered* must not count as explaining it — that the clause was filtered says
+      // nothing about whether the `super()` it delegates to was found.
+      const base = {
+        "src/client.ts":
+          "export class Client {\n  constructor(readonly url: string) {}\n}\n",
+        "src/retry.ts":
+          'import { Client } from "./client.js";\n\nexport class RetryingClient extends Client {\n  constructor(url: string) {\n    super(url);\n  }\n}\n',
+      };
+      const outcome = await analyze(
+        await throwawayCase({
+          base,
+          head: {
+            ...base,
+            "src/client.ts":
+              'export class Client {\n  constructor(readonly url: string) {\n    if (url === "") throw new Error("url is required");\n  }\n}\n',
+          },
+        }),
+      );
+      expect(unexplainedOf(outcome.occurrences)).toEqual([]);
+
+      // Drop only the `super()` usage, leaving the filtered clause exactly as it was.
+      const withoutSuper = {
+        ...outcome.result,
+        usages: outcome.result.usages.filter(
+          (usage) => usage.filePath !== "src/retry.ts",
+        ),
+      };
+      const unexplained = unexplainedOf(outcome.explain(withoutSuper));
+
       expect(
         unexplained.map(
           (occurrence) => `${occurrence.filePath}:${String(occurrence.line)}`,
         ),
-      ).toEqual(["src/use.ts:4"]);
+      ).toEqual(["src/retry.ts:3"]);
+      expect(unexplained[0]?.explanation).toMatchObject({
+        why: "an extends clause whose subclass constructor reported no super() usage",
+      });
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "turns a lost implicit construct usage into an unexplained extends clause",
+    async () => {
+      // The other half: with no constructor there is no `super()` to lose, so the only
+      // thing that can explain the clause is the implicit usage at it.
+      const base = {
+        "src/client.ts":
+          "export class Client {\n  constructor(readonly url: string) {}\n}\n",
+        "src/plain.ts":
+          'import { Client } from "./client.js";\n\nexport class PlainClient extends Client {}\n',
+      };
+      const outcome = await analyze(
+        await throwawayCase({
+          base,
+          head: {
+            ...base,
+            "src/client.ts":
+              'export class Client {\n  constructor(readonly url: string) {\n    if (url === "") throw new Error("url is required");\n  }\n}\n',
+          },
+        }),
+      );
+      expect(unexplainedOf(outcome.occurrences)).toEqual([]);
+
+      const unexplained = unexplainedOf(
+        outcome.explain({ ...outcome.result, usages: [] }),
+      );
+
+      expect(unexplained.map((o) => `${o.filePath}:${String(o.line)}`)).toEqual(
+        ["src/plain.ts:3"],
+      );
+      expect(unexplained[0]?.explanation).toMatchObject({
+        why: "a subclass with no constructor, and no implicit construct usage reported for its extends clause",
+      });
     },
     TIMEOUT_MS,
   );

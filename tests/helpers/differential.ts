@@ -17,7 +17,6 @@ import type { Seed, SeedGap } from "../../src/analysis/seeds.js";
 export type Explanation =
   | { readonly kind: "usage" }
   | { readonly kind: "filtered"; readonly reason: string }
-  | { readonly kind: "undecided"; readonly reason: string }
   | { readonly kind: "comment-or-string" }
   | { readonly kind: "different-symbol" }
   | { readonly kind: "gap" }
@@ -148,16 +147,18 @@ function explain(
   callable: Callable,
   input: DifferentialInput,
 ): Explanation {
+  // **First**, ahead of the usage and filtered lookups. An `extends` clause is filtered
+  // in the explicit-constructor case, and accepting "filtered" as its explanation is the
+  // whole hole: that the clause was filtered says nothing about whether the `super()` it
+  // delegates to was found.
+  const heritage = heritageVerdict(pos, filePath, sourceFile, input);
+  if (heritage !== undefined) return heritage;
+
   if (input.result.usages.some(at(filePath, pos))) return { kind: "usage" };
 
   const filtered = input.result.filtered.find(at(filePath, pos));
   if (filtered !== undefined) {
     return { kind: "filtered", reason: filtered.reason };
-  }
-
-  const undecided = input.result.undecided.find(at(filePath, pos));
-  if (undecided !== undefined) {
-    return { kind: "undecided", reason: undecided.reason };
   }
 
   const node = sourceFile.getDescendantAtPos(pos);
@@ -218,6 +219,65 @@ function resolvedDeclarationsOf(node: Node): Node[] {
   }
 
   return declarations;
+}
+
+/**
+ * The `extends <SeedName>` tripwire.
+ *
+ * A `super()` site contains no textual occurrence of the class name, so losing `super()`
+ * detection was invisible to a harness that only explains occurrences. The `extends`
+ * clause *does* carry the name, and exactly two things may explain it: the implicit
+ * construct usage reported at the clause itself, or a `super()` usage inside that
+ * subclass's explicit constructor. Neither means the construction is reported by nothing,
+ * which is the outcome this harness exists to make impossible.
+ *
+ * Deliberately ahead of the `filtered` lookup. In the explicit-constructor case the clause
+ * **is** filtered, and accepting that as an explanation is precisely the hole: that the
+ * clause was filtered says nothing about whether the `super()` it delegates to was found.
+ */
+function heritageVerdict(
+  pos: number,
+  filePath: string,
+  sourceFile: SourceFile,
+  input: DifferentialInput,
+): Explanation | undefined {
+  const node = sourceFile.getDescendantAtPos(pos);
+  if (node === undefined) return undefined;
+  const parent = node.getParent();
+  if (parent === undefined || !Node.isExpressionWithTypeArguments(parent)) {
+    return undefined;
+  }
+  const clause = parent.getParent();
+  if (!Node.isHeritageClause(clause)) return undefined;
+  const subclass = clause.getParent();
+  if (!Node.isClassDeclaration(subclass) && !Node.isClassExpression(subclass)) {
+    return undefined;
+  }
+
+  if (input.result.usages.some(at(filePath, pos))) return { kind: "usage" };
+
+  const constructor = subclass
+    .getConstructors()
+    .find((candidate) => candidate.getBody() !== undefined);
+  if (constructor === undefined) {
+    return {
+      kind: "unexplained",
+      why: "a subclass with no constructor, and no implicit construct usage reported for its extends clause",
+    };
+  }
+
+  const reported = input.result.usages.some(
+    (usage) =>
+      usage.filePath === filePath &&
+      usage.pos >= constructor.getStart() &&
+      usage.pos < constructor.getEnd(),
+  );
+  return reported
+    ? { kind: "usage" }
+    : {
+        kind: "unexplained",
+        why: "an extends clause whose subclass constructor reported no super() usage",
+      };
 }
 
 function at(filePath: string, pos: number) {
