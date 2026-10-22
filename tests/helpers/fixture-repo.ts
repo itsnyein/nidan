@@ -1,9 +1,11 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import {
   mkdtemp,
   cp,
   mkdir,
   readFile,
+  writeFile,
   readdir,
   rm,
   stat,
@@ -28,6 +30,9 @@ const FIXTURE_AUTHOR = {
 
 const BASE_REF = "base";
 const HEAD_REF = "head";
+
+/** Where a template records its commit SHAs, so copies need not re-run `git`. */
+const REFS_FILE = "omen-refs.json";
 
 /** Copied into `<repo>/node_modules` after the commits, never committed. */
 const NODE_MODULES_DIR = "node_modules";
@@ -69,18 +74,109 @@ export interface FixtureRepo {
  *
  * The caller owns the result and must call `cleanup()`.
  */
+/**
+ * Built repositories, keyed by case directory, one entry per worker process.
+ *
+ * Measured before this existed: a full run built **272** repositories at a mean of
+ * **4,287 ms** each — 1,166 s of work inside a 257 s wall clock, which is essentially all
+ * of the suite's worker time. 146 of those builds came from only ~29 fixture directories,
+ * `overlay-basic` alone 31 times.
+ *
+ * The cached value is a **template**, never handed out directly: each caller gets a fresh
+ * copy, so a test can mutate its repository without any other test seeing it. Copying a
+ * built tree costs one `cp` instead of `git init`, two recursive copies, two commits and
+ * a `branch` — roughly six subprocess spawns.
+ *
+ * Vitest runs files in separate worker processes, so this is per worker rather than per
+ * run. A fixture used by several files is still built once per worker that uses it.
+ */
+const templates = new Map<string, Promise<string>>();
+
 export async function createFixtureRepo(caseDir: string): Promise<FixtureRepo> {
   const baseDir = join(caseDir, BASE_REF);
   const headDir = join(caseDir, HEAD_REF);
   await assertDirectory(baseDir, caseDir);
   await assertDirectory(headDir, caseDir);
 
+  // A built template is reused across calls for the same case; the caller still gets its
+  // own copy. `buildTemplate` is memoised by the promise itself, so concurrent callers in
+  // one worker await a single build rather than racing to create several.
+  //
+  // **Cases with working-tree extras are never templated.** `createLinks` writes symlinks
+  // whose targets are absolute paths inside the repository that built them, so a copy
+  // relocates the link but not its target — the pnpm-layout cases then resolve to the
+  // template's path or to nothing. Two tests caught this after `verbatimSymlinks` fixed
+  // the first, coarser version of the same mistake. Relocatable links would mean changing
+  // what those fixtures express, which is not this task's to decide.
+  if (await hasWorkingTreeExtras(caseDir)) {
+    return buildDirect(caseDir, baseDir, headDir);
+  }
+
+  let template = templates.get(caseDir);
+  if (template === undefined) {
+    template = buildTemplate(caseDir, baseDir, headDir);
+    templates.set(caseDir, template);
+  }
+  const templateRoot = await template;
+
   const root = await mkdtemp(join(tmpdir(), "omen-fixture-"));
   const repoPath = join(root, "repo");
-  const homePath = join(root, "home");
   const cleanup = async (): Promise<void> => {
     await rm(root, { recursive: true, force: true });
   };
+
+  // `verbatimSymlinks` because the default **dereferences** symlinks: the pnpm-layout
+  // fixtures build directory symlinks into `node_modules`, and copying them as real
+  // directories silently changes what the case tests. Five tests caught this.
+  await cp(templateRoot, root, { recursive: true, verbatimSymlinks: true });
+  const { baseSha, headSha } = await readRefs(repoPath);
+  return {
+    path: repoPath,
+    baseRef: BASE_REF,
+    headRef: HEAD_REF,
+    baseSha,
+    headSha,
+    cleanup,
+  };
+}
+
+/** Whether a case carries uncommitted content that a template copy cannot relocate. */
+async function hasWorkingTreeExtras(caseDir: string): Promise<boolean> {
+  if (await isDirectory(join(caseDir, NODE_MODULES_DIR))) return true;
+  if (await isDirectory(join(caseDir, WORKTREE_DIR))) return true;
+  return existsSync(join(caseDir, LINKS_FILE));
+}
+
+/** Builds a repository the caller keeps, for cases a template cannot serve. */
+async function buildDirect(
+  caseDir: string,
+  baseDir: string,
+  headDir: string,
+): Promise<FixtureRepo> {
+  const templateRoot = await buildTemplate(caseDir, baseDir, headDir);
+  const repoPath = join(templateRoot, "repo");
+  const { baseSha, headSha } = await readRefs(repoPath);
+  return {
+    path: repoPath,
+    baseRef: BASE_REF,
+    headRef: HEAD_REF,
+    baseSha,
+    headSha,
+    cleanup: async (): Promise<void> => {
+      await rm(templateRoot, { recursive: true, force: true });
+    },
+  };
+}
+
+/** Builds one repository to be copied, not handed out. */
+async function buildTemplate(
+  caseDir: string,
+  baseDir: string,
+  headDir: string,
+): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "omen-template-"));
+  const repoPath = join(root, "repo");
+  const homePath = join(root, "home");
 
   try {
     await mkdir(repoPath);
@@ -105,19 +201,28 @@ export async function createFixtureRepo(caseDir: string): Promise<FixtureRepo> {
     // from a snapshot, and a leak case needs the work tree to disagree with head.
     await applyWorkingTree(caseDir, repoPath);
 
-    return {
-      path: repoPath,
-      baseRef: BASE_REF,
-      headRef: HEAD_REF,
-      baseSha,
-      headSha,
-      cleanup,
-    };
+    // The SHAs are recorded in the template so a copy need not re-run `git`.
+    await writeFile(
+      join(root, REFS_FILE),
+      JSON.stringify({ baseSha, headSha }),
+      "utf8",
+    );
+    return root;
   } catch (error) {
-    // A half-built repository is never handed back, and never left on disk.
-    await cleanup();
+    // A half-built template is never handed back, and never left on disk.
+    await rm(root, { recursive: true, force: true });
     throw error;
   }
+}
+
+/** Reads the SHAs recorded when the template was built. */
+async function readRefs(
+  repoPath: string,
+): Promise<{ baseSha: string; headSha: string }> {
+  const raw = await readFile(join(repoPath, "..", REFS_FILE), "utf8");
+  // The file is written by `buildTemplate` directly above; its shape is not external
+  // input.
+  return JSON.parse(raw) as { baseSha: string; headSha: string };
 }
 
 /**
