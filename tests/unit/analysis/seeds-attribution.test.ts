@@ -192,6 +192,50 @@ describe("the boundary rule, isolated from the formatting guard", () => {
   );
 });
 
+describe("a shared-token change on a line no declarator occupies", () => {
+  it.each([
+    [
+      "inside a class method",
+      "export class C {\n  m(): number {\n    let\n      a = () => 1,\n      b = () => 2;\n    return a() + b();\n  }\n}\n",
+      "export class C {\n  m(): number {\n    var\n      a = () => 1,\n      b = () => 2;\n    return a() + b();\n  }\n}\n",
+      [
+        "src/a.ts :: C.m :: function :: a modified",
+        "src/a.ts :: C.m :: function :: b modified",
+      ],
+    ],
+    [
+      "at top level",
+      "let\n  a = () => 1,\n  b = () => 2;\nexport const use = () => a() + b();\n",
+      "var\n  a = () => 1,\n  b = () => 2;\nexport const use = () => a() + b();\n",
+      [
+        "src/a.ts :: :: function :: a modified",
+        "src/a.ts :: :: function :: b modified",
+      ],
+    ],
+  ])(
+    "seeds every declarator when the keyword is alone on its line: %s",
+    async (_label, base, head, expected) => {
+      // The keyword sits on its own line, so **no declarator's range contains it**.
+      // Sibling expansion cannot help: it grows from already-touched keys, and nothing
+      // is touched. Both declarators' signatures changed, so both were modified and
+      // unreported — the line-level invariant satisfied, because the changed line was
+      // owned by the enclosing method (or by nothing at top level).
+      //
+      // Both fixtures freezing this ruling put the keyword on a declarator's line, so
+      // neither reaches this shape.
+      const outcome = await run({
+        base: { "src/a.ts": base },
+        head: { "src/a.ts": head },
+      });
+
+      for (const key of expected) {
+        expect(seedKeys(outcome.result)).toContain(key);
+      }
+    },
+    TIMEOUT_MS,
+  );
+});
+
 describe("compareGaps obeys a total order", () => {
   // Asserted on the comparator itself, not on sorted output. Sorting cannot tell a
   // correct comparator from an inconsistent one that the engine's stable sort happens to
@@ -223,6 +267,26 @@ describe("compareGaps obeys a total order", () => {
     // the language left the sort order unspecified.
     expect(compareGaps(left, right)).toBe(-compareGaps(right, left));
     expect(compareGaps(left, right)).toBeLessThan(0);
+  });
+
+  it("distinguishes two ambiguous-identity gaps that differ only by key", () => {
+    // `key` was not consulted, so two collisions in one file sharing a line compared 0 in
+    // both directions — still not a total order, in the change that existed to make it
+    // one.
+    const collision = (key: string): SeedGap => ({
+      kind: "ambiguous-identity",
+      snapshot: "head",
+      filePath: "src/a.ts",
+      key,
+      lines: [3],
+      reasonCode: "duplicate-structural-key",
+    });
+
+    expect(compareGaps(collision("a"), collision("b"))).toBeLessThan(0);
+    expect(compareGaps(collision("a"), collision("b"))).toBe(
+      -compareGaps(collision("b"), collision("a")),
+    );
+    expect(compareGaps(collision("a"), collision("a"))).toBe(0);
   });
 
   it("breaks a file/line/kind tie on snapshot", () => {

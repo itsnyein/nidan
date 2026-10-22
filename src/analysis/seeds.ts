@@ -377,6 +377,11 @@ function attributedKeys(
   const keys = new Set<string>();
   for (const line of linesOf(range)) {
     for (const owner of innermostOwners(inFile, line)) keys.add(owner.key);
+    // A line inside a declaring statement but outside every declarator — the keyword on
+    // its own line — belongs to every callable that statement declares. Expansion from
+    // already-touched keys cannot reach these: no declarator owns the line, so nothing is
+    // touched to expand from, and the declarators are modified and unreported.
+    for (const key of declaratorsOfStatementAt(inFile, line)) keys.add(key);
   }
   return [...keys];
 }
@@ -427,6 +432,50 @@ function linesOf(range: Hunk["base"]): number[] {
  * A candidate survives when no other containing callable is strictly inside it: that
  * drops enclosing callables while keeping every minimal one.
  */
+/**
+ * Every declarator of a multi-declarator statement whose span contains the line.
+ *
+ * Used only when no declarator owns the line itself: the shared part of the statement —
+ * the `let`/`const`/`var` keyword and its modifiers — belongs to all of them, and a
+ * change there modifies every callable the statement declares (§8.2 as amended
+ * 2026-10-22).
+ */
+function declaratorsOfStatementAt(
+  callables: readonly Callable[],
+  line: number,
+): string[] {
+  // Grouped by statement: the shared part is any line inside the statement's span that
+  // no declarator's own range covers — the keyword on its own line. A line *inside* a
+  // declarator is that declarator's alone, so an initializer edit never drags siblings
+  // in. Independent of whether an enclosing callable also owns the line: in a class
+  // method the method owns it, and the declarators still need seeding.
+  const byStatement = new Map<string, Callable[]>();
+  for (const callable of callables) {
+    if (callable.statementId === "") continue;
+    byStatement.set(callable.statementId, [
+      ...(byStatement.get(callable.statementId) ?? []),
+      callable,
+    ]);
+  }
+
+  const keys: string[] = [];
+  for (const group of byStatement.values()) {
+    const first = group[0];
+    if (first === undefined) continue;
+    const insideStatement =
+      line >= first.statementStartLine && line <= first.statementEndLine;
+    if (!insideStatement) continue;
+    const insideSomeDeclarator = group.some((callable) =>
+      callable.ranges.some(
+        (range) => line >= range.startLine && line <= range.endLine,
+      ),
+    );
+    if (insideSomeDeclarator) continue;
+    for (const callable of group) keys.push(callable.key);
+  }
+  return keys;
+}
+
 function innermostOwners(
   callables: readonly Callable[],
   line: number,
@@ -652,13 +701,31 @@ export function compareGaps(left: SeedGap, right: SeedGap): number {
   }
   // Same file, line, kind and snapshot: order by the whole site, so two ambiguous gaps
   // spanning different declaration sets still sort deterministically.
-  const bySite = siteOf(left).localeCompare(siteOf(right));
-  return bySite;
+  // `key` participates too: two `ambiguous-identity` gaps in one file can share a line
+  // and differ only by key, and without this they compare 0 in both directions — still
+  // not a total order.
+  const leftKey = keyOf(left);
+  const rightKey = keyOf(right);
+  if (leftKey !== rightKey) return leftKey < rightKey ? -1 : 1;
+
+  // Code-unit comparison, never `localeCompare`: that is locale- and ICU-dependent, which
+  // is exactly the engine-dependent ordering this function exists to remove, and
+  // `decisions.md` §10 forbids locale-dependent ordering outright. Using it here was a
+  // defect introduced by the very change meant to fix ordering.
+  const leftSite = siteOf(left);
+  const rightSite = siteOf(right);
+  if (leftSite !== rightSite) return leftSite < rightSite ? -1 : 1;
+  return 0;
 }
 
 /** The line a gap is anchored at. */
 function firstLine(gap: SeedGap): number {
   return gap.kind === "unmapped-change" ? gap.line : (gap.lines[0] ?? 0);
+}
+
+/** The key a gap names, or `""` for kinds that name none. */
+function keyOf(gap: SeedGap): string {
+  return gap.kind === "ambiguous-identity" ? gap.key : "";
 }
 
 /** Every line a gap names, as one comparable string. */

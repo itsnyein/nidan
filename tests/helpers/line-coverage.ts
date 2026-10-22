@@ -166,6 +166,54 @@ export function expectEveryChangedLineAccounted(
         `${snapshot} line ${String(line.line)} of ${line.filePath} is labelled "seeded" but lies inside no seeded callable's declaration`,
       ).toBe(true);
     }
+
+    // The same corroboration for `formatting`. **Restored**: T2.7 intended to convert this
+    // from hulls to ranges and deleted it instead, which let a mutation labelling every
+    // unowned line `formatting` pass the whole suite — every unmapped change vanishing
+    // with the invariant satisfied. The check that exists to catch a weakened invariant
+    // was itself the thing weakened.
+    const equal = new Set(result.formattingEqualKeys);
+    const equalRanges = index.callables.filter((callable) =>
+      equal.has(callable.key),
+    );
+    for (const line of result.coverage) {
+      if (line.bucket !== "formatting" || line.snapshot !== snapshot) continue;
+      const inside = equalRanges.some(
+        (callable) =>
+          callable.filePath === line.filePath &&
+          callable.ranges.some(
+            (range) =>
+              line.line >= range.startLine && line.line <= range.endLine,
+          ),
+      );
+      expect(
+        inside,
+        `${snapshot} line ${String(line.line)} of ${line.filePath} is labelled "formatting" but lies inside no declaration of a callable that compared equal`,
+      ).toBe(true);
+    }
+
+    // And for `ambiguous`: the line must lie inside a colliding declaration whose
+    // collision is reported, or the bucket becomes a place to hide an unaccounted line.
+    const reportedCollisions = new Set(
+      result.gaps
+        .filter((gap) => gap.kind === "ambiguous-identity")
+        .map((gap) => `${gap.filePath}:${gap.key}`),
+    );
+    for (const line of result.coverage) {
+      if (line.bucket !== "ambiguous" || line.snapshot !== snapshot) continue;
+      const inside = index.collisions.some(
+        (collision) =>
+          collision.filePath === line.filePath &&
+          reportedCollisions.has(`${collision.filePath}:${collision.key}`) &&
+          collision.spans.some(
+            (span) => line.line >= span.start && line.line <= span.end,
+          ),
+      );
+      expect(
+        inside,
+        `${snapshot} line ${String(line.line)} of ${line.filePath} is labelled "ambiguous" but lies inside no reported collision`,
+      ).toBe(true);
+    }
   }
 }
 
@@ -221,8 +269,9 @@ function innermostOwnersOfChangedLines(
     const containing = index.callables.filter(
       (callable) =>
         callable.filePath === filePath &&
-        line >= callable.startLine &&
-        line <= callable.endLine,
+        callable.ranges.some(
+          (range) => line >= range.startLine && line <= range.endLine,
+        ),
     );
     for (const candidate of containing) {
       const hasInnerCandidate = containing.some(
