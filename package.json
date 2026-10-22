@@ -18,7 +18,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:randomized": "vitest run tests/unit/analysis/seeds-randomized.test.ts"
   },
   "dependencies": {
     "commander": "^15.0.0",
