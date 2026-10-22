@@ -1,0 +1,23 @@
+{
+  "description": "Equivalence variant: a changed .ts function has one invoke usage, from the enclosing function of the only call site. The four variants share byte-identical sources; only the extension and the compiler options that extension requires differ.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/greet.ts :: :: function :: greet",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/use.ts :: :: function :: report",
+            "site": { "file": "src/use.ts", "line": 4 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": []
+  }
+}

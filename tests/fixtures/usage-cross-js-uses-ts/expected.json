@@ -1,0 +1,23 @@
+{
+  "description": "A TypeScript callable used from JavaScript resolves exactly, the same status the all-TypeScript variant reports.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/greet.ts :: :: function :: greet",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/use.js :: :: function :: report",
+            "site": { "file": "src/use.js", "line": 4 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": []
+  }
+}
