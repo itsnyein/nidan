@@ -1,0 +1,23 @@
+{
+  "description": "Equivalence variant: a changed .js function has one invoke usage, from the enclosing function of the only call site. The four variants share byte-identical sources; only the extension and the compiler options that extension requires differ (allowJs, checkJs).",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/greet.js :: :: function :: greet",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/use.js :: :: function :: report",
+            "site": { "file": "src/use.js", "line": 4 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": []
+  }
+}

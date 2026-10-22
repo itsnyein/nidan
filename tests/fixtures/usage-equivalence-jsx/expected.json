@@ -1,0 +1,23 @@
+{
+  "description": "Equivalence variant: a changed .jsx function has one invoke usage, from the enclosing function of the only call site. The four variants share byte-identical sources; only the extension and the compiler options that extension requires differ (allowJs, checkJs, jsx: preserve).",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/greet.jsx :: :: function :: greet",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/use.jsx :: :: function :: report",
+            "site": { "file": "src/use.jsx", "line": 4 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": []
+  }
+}

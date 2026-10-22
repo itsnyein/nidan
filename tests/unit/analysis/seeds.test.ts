@@ -104,6 +104,18 @@ describe("classification against the frozen fixtures", () => {
     // wait for T2.4 below.
     "seed-boundary-insert-body-first",
     "seed-boundary-insert-body-last",
+    // The usage fixtures. Their *usage* expectations are for reference discovery to
+    // satisfy and nothing asserts them yet; their seed keys are seed-mapping behaviour
+    // and are held here from the moment the fixtures exist, so a key that does not match
+    // is caught now rather than later, against a fixture that was already frozen.
+    "usage-equivalence-ts",
+    "usage-equivalence-tsx",
+    "usage-equivalence-js",
+    "usage-equivalence-jsx",
+    "usage-cross-ts-uses-js",
+    "usage-cross-js-uses-ts",
+    "usage-barrel-two-hops",
+    "usage-constructor-cross-file",
   ])(
     "%s seeds exactly what the fixture expects",
     async (name) => {

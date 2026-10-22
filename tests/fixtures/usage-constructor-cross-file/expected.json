@@ -1,0 +1,29 @@
+{
+  "description": "A changed constructor is found through the class symbol across module boundaries: new in one file, a subclass super() in another, with from naming the subclass constructor.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/client.ts :: Client :: constructor :: constructor",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "construct",
+            "resolution": { "status": "exact" },
+            "from": "src/retry.ts :: RetryingClient :: constructor :: constructor",
+            "site": { "file": "src/retry.ts", "line": 5 }
+          },
+          {
+            "relation": "construct",
+            "resolution": { "status": "exact" },
+            "from": "src/use.ts :: :: function :: makeClient",
+            "site": { "file": "src/use.ts", "line": 4 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": []
+  }
+}
