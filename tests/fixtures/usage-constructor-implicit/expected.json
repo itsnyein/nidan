@@ -1,0 +1,24 @@
+{
+  "description": "A subclass with no explicit constructor: its extends clause is the construction, reported as one implicit construct usage from the subclass's constructor key.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/client.ts :: Client :: constructor :: constructor",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "construct",
+            "resolution": { "status": "exact" },
+            "from": "src/plain.ts :: PlainClient :: constructor :: constructor",
+            "site": { "file": "src/plain.ts", "line": 3 },
+            "implicit": true
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": []
+  }
+}

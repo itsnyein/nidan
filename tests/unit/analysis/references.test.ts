@@ -140,6 +140,43 @@ function actualUsages(result: ReferenceResult): string[] {
     .sort();
 }
 
+/**
+ * Fixtures whose usage expectation states a ruling that is **not yet implemented**.
+ *
+ * Each entry is asserted to **fail** below, not skipped. A skip-list could hide a genuine
+ * regression and would outlive its fix silently; asserting the current wrong behaviour
+ * means the day the ruling lands, the `still` test fails and forces the entry out.
+ */
+const PENDING_USAGES = new Map<string, string>([
+  [
+    "usage-constructor-implicit",
+    "the implicit-constructor heritage ruling is not implemented: the clause is reported as undecided rather than as a construct usage",
+  ],
+]);
+
+describe("rulings not yet implemented", () => {
+  it.each([...PENDING_USAGES])(
+    "%s still reports no usage at all",
+    async (name) => {
+      const outcome = await analyze(join("tests", "fixtures", name));
+
+      // The current behaviour, stated exactly. When the ruling lands this fails, which
+      // is the point: the entry cannot survive its own fix.
+      expect(actualUsages(outcome.result)).toEqual([]);
+      expect(
+        outcome.result.undecided.map(
+          (reference) =>
+            `${reference.reason} ${reference.filePath}:${String(reference.line)}`,
+        ),
+      ).toEqual(["implicit-constructor-heritage src/plain.ts:3"]);
+      // And the record it will be held to is not empty, so this is pending work rather
+      // than a fixture that expects nothing.
+      expect(expectedUsages(name)?.length).toBe(1);
+    },
+    TIMEOUT_MS,
+  );
+});
+
 describe("usages against the frozen fixtures", () => {
   // **Every** fixture, not only the ones whose records declare a usage. Keying on record
   // content is the defect this repository has already paid for twice: a fixture that
@@ -147,7 +184,9 @@ describe("usages against the frozen fixtures", () => {
   // "has at least one usage" removed exactly those from the check. A record that empties
   // itself would also have deleted its own assertion.
   const names = allFixtures();
-  const declaring = names.filter((name) => expectedUsages(name) !== undefined);
+  const declaring = names
+    .filter((name) => expectedUsages(name) !== undefined)
+    .filter((name) => !PENDING_USAGES.has(name));
 
   it("includes the fixtures that freeze an empty usage list", () => {
     // The property the enumeration exists for, asserted rather than assumed. A fixture

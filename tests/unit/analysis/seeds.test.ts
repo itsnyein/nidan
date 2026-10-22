@@ -116,6 +116,7 @@ describe("classification against the frozen fixtures", () => {
     "usage-cross-js-uses-ts",
     "usage-barrel-two-hops",
     "usage-constructor-cross-file",
+    "usage-constructor-implicit",
   ])(
     "%s seeds exactly what the fixture expects",
     async (name) => {
