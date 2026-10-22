@@ -1,8 +1,6 @@
 ## Summary
 
-<!-- What changed and why, in 1–3 sentences. -->
-
-Task: <!-- e.g. T1.2 -->
+<!-- What changed and why, in 1–3 sentences, in plain terms. -->
 
 ## Changes
 
@@ -17,7 +15,7 @@ Task: <!-- e.g. T1.2 -->
 ## Tests
 
 - [ ] New/changed behavior has tests that fail without the change
-- [ ] No files under `tests/fixtures/` changed (or this is an `E` task)
+- [ ] No files under `tests/fixtures/` changed (or this is an approved fixture change)
 
 ## Public contract
 

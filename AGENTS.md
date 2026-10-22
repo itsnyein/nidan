@@ -125,7 +125,8 @@ All agents:
   deleting branches, rewriting history, bypassing branch protection or required
   checks, changing Git config, and changing commit authorship.
 - Work on a task branch, never directly on `main`. One task, one branch, one
-  pull request. Maintainer-directed governance and configuration changes are the
+  pull request. Name the branch for the change, not for the task: see
+  "Planning labels stay in `planning/`". Maintainer-directed governance and configuration changes are the
   only exception (`planning/decisions.md` §9).
 - Never merge your own pull request. The maintainer merges.
 
@@ -154,6 +155,23 @@ Use one-line Conventional Commits in imperative mood (for example
 `refactor`, `chore`, `ci`, `build`, `perf`, `style`, `revert`; optional scope;
 optional `!`. Never add `Co-authored-by`, a session link, or any other AI
 attribution.
+
+Describe the change itself, never the plan it came from:
+`feat: classify constructor references`.
+
+## Planning labels stay in `planning/`
+
+Milestone and task identifiers are internal planning labels. They appear only
+inside `planning/`. Never put one in source code, comments, test names, fixture
+names, `docs/`, ADRs, `schema/`, commit messages, pull request titles or bodies,
+or branch names. A pull request body explains what changed and why in plain
+terms, with no task identifier and no reference to `planning/`.
+
+Branch names are `<type>/<short-meaningful-description>`, using the Conventional
+Commit type: `feat/reference-discovery`, `test/barrel-usage-fixtures`,
+`docs/attribution-rules`.
+
+Existing code, fixtures, and history are left as they are.
 
 ## When to stop
 
