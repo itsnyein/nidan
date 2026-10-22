@@ -4,9 +4,9 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { diffCommits } from "../../../src/analysis/diff.js";
+import { diffCommits, type DiffResult } from "../../../src/analysis/diff.js";
 import { enumerateCallables } from "../../../src/analysis/identity.js";
-import { mapSeeds } from "../../../src/analysis/seeds.js";
+import { mapSeeds, type SeedResult } from "../../../src/analysis/seeds.js";
 import { loadSnapshotPair } from "../../../src/project/program.js";
 import { createFixtureRepo } from "../../helpers/fixture-repo.js";
 import { expectEveryChangedLineAccounted } from "../../helpers/line-coverage.js";
@@ -161,11 +161,35 @@ function generateCase(random: Random): Generated {
   const count = 2 + random.int(4);
   const shapes = Array.from({ length: count }, () => random.pick(SHAPES));
 
+  // Roughly a third of cases are steered into a **mixed hunk**: a deleted callable
+  // immediately followed by an edited top-level statement. Left to chance this shape
+  // arose once in 40 cases, so the generator's claim to cover it rested on a single draw
+  // that a change to SEED or CASES could silently remove.
+  //
+  // A deletion is what makes the two edits contiguous. Two adjacent *modifications*
+  // produce two hunks under `--unified=0`, because the callable's unchanged header or
+  // closing brace separates them — the very non-adjacency this shape is meant to avoid.
+  const mixedAt = random.chance(0.35) ? random.int(Math.max(1, count - 1)) : -1;
+
   const baseLines: string[] = [];
   const headLines: string[] = [];
   const edits: string[] = [];
 
   for (const [index, shape] of shapes.entries()) {
+    // The steered pair: delete the callable, then edit the statement right after it.
+    if (index === mixedAt) {
+      baseLines.push(
+        ...emit("function", index, 1),
+        `export const M${String(index)} = 1;`,
+      );
+      headLines.push(`export const M${String(index)} = 2;`);
+      edits.push(
+        `function#${String(index)}: delete`,
+        `top-level#${String(index)}: modify`,
+      );
+      continue;
+    }
+
     const base = emit(shape, index, 1);
     const edit = random.pick(["none", "modify", "insert", "delete"] as const);
 
@@ -201,6 +225,41 @@ function generateCase(random: Random): Generated {
     head: `${headLines.join("\n")}\n`,
     description: edits.join(", "),
   };
+}
+
+async function chainFor(
+  generated: Generated,
+): Promise<{ diff: DiffResult; result: SeedResult }> {
+  const caseDir = await mkdtemp(join(tmpdir(), "omen-rand-"));
+  cleanups.push(() => rm(caseDir, { recursive: true, force: true }));
+  for (const [snapshot, contents] of [
+    ["base", generated.base],
+    ["head", generated.head],
+  ] as const) {
+    await mkdir(join(caseDir, snapshot, "src"), { recursive: true });
+    await writeFile(join(caseDir, snapshot, "tsconfig.json"), `${TSCONFIG}\n`);
+    await writeFile(join(caseDir, snapshot, "src", "a.ts"), contents);
+  }
+
+  const repo = await createFixtureRepo(caseDir);
+  cleanups.push(repo.cleanup);
+  const pair = await loadSnapshotPair({
+    repoRoot: repo.path,
+    baseSha: repo.baseSha,
+    headSha: repo.headSha,
+  });
+  const diff = await diffCommits(repo.path, repo.baseSha, repo.headSha);
+  const head = enumerateCallables(
+    pair.head.project.getSourceFiles(),
+    repo.path,
+  );
+  const base = enumerateCallables(
+    pair.base.project.getSourceFiles(),
+    repo.path,
+  );
+  const result = mapSeeds({ diff, base, head });
+  expectEveryChangedLineAccounted(result, diff, head, base);
+  return { diff, result };
 }
 
 async function runCase(generated: Generated): Promise<void> {
@@ -294,6 +353,52 @@ function indent(text: string): string {
     .join("\n");
 }
 
+describe.skipIf(!RANDOMIZED)("a steered mixed pair is really one hunk", () => {
+  it(
+    "produces a single hunk holding both a seeded callable and an uncovered line",
+    async () => {
+      // The predicate in the reachability test infers the shape from edit *descriptions*,
+      // and loosening it to drop the deletion requirement still passes — so the predicate
+      // alone defends nothing about shape. This checks the diff itself.
+      //
+      // Deletion is what makes the two edits contiguous: two adjacent modifications are
+      // separated by the callable's unchanged header or closing brace under
+      // `--unified=0`, producing two hunks.
+      const random = randomFrom(rng(SEED));
+      let steered: Generated | undefined;
+      for (let index = 0; index < CASES && steered === undefined; index += 1) {
+        const generated = generateCase(random);
+        if (
+          /function#\d+: delete, top-level#\d+: modify/.test(
+            generated.description,
+          )
+        ) {
+          steered = generated;
+        }
+      }
+
+      // The generator must actually steer; otherwise this would vacuously pass.
+      expect(steered).toBeDefined();
+      if (steered === undefined) return;
+
+      const { diff, result } = await chainFor(steered);
+      const hunks = diff.files.reduce(
+        (total, file) => total + file.hunks.length,
+        0,
+      );
+
+      expect(hunks).toBe(1);
+      // One hunk, two outcomes: the deleted callable is seeded and the edited top-level
+      // line is uncovered, which is the mixed-hunk shape in full.
+      expect(result.seeds.length).toBeGreaterThan(0);
+      expect(
+        result.gaps.filter((gap) => gap.kind === "unmapped-change").length,
+      ).toBeGreaterThan(0);
+    },
+    TIMEOUT_MS,
+  );
+});
+
 describe("the generator reaches the shapes it claims", () => {
   it("generates the three shapes that caused M2's silent misses", () => {
     // The generator is only worth running if it can reach the failures this task closes.
@@ -305,6 +410,7 @@ describe("the generator reaches the shapes it claims", () => {
     // that was supposed to guard against it.
     const random = randomFrom(rng(SEED));
     const seen = new Set<string>();
+    let mixed = 0;
     for (let index = 0; index < CASES; index += 1) {
       const { description } = generateCase(random);
       const edits = description.split(", ");
@@ -316,18 +422,25 @@ describe("the generator reaches the shapes it claims", () => {
       if (edits.some((edit) => edit.endsWith("insert-before")))
         seen.add("boundary-insertion");
 
-      // Adjacent declarations, both edited: the mixed-hunk shape. Non-adjacent edits land
-      // in separate hunks and do not exercise it at all.
+      // Adjacent declarations forming one hunk. A **deletion** is required: two adjacent
+      // modifications produce two hunks under `--unified=0`, since the callable's
+      // unchanged header or closing brace separates them. The looser predicate counted
+      // those, so it claimed a shape the generated cases did not have.
       for (const [first, second] of pairs(edits)) {
         const firstIndex = Number(first.split("#")[1]?.split(":")[0]);
         const secondIndex = Number(second.split("#")[1]?.split(":")[0]);
-        if (secondIndex !== firstIndex + 1) continue;
+        if (secondIndex !== firstIndex && secondIndex !== firstIndex + 1)
+          continue;
         const involvesTopLevel =
           first.startsWith("top-level#") || second.startsWith("top-level#");
         const involvesCallable =
           first.startsWith("function#") || second.startsWith("function#");
-        if (involvesTopLevel && involvesCallable)
+        const involvesDeletion =
+          first.endsWith("delete") || second.endsWith("delete");
+        if (involvesTopLevel && involvesCallable && involvesDeletion) {
           seen.add("substantive-text-beside-a-callable");
+          mixed += 1;
+        }
       }
     }
 
@@ -336,6 +449,11 @@ describe("the generator reaches the shapes it claims", () => {
       "siblings-on-one-line",
       "substantive-text-beside-a-callable",
     ]);
+
+    // A count, not merely presence. The shape previously arose once in 40 cases, so the
+    // claim held by a single draw that a change to SEED or CASES could remove while this
+    // test stayed green.
+    expect(mixed).toBeGreaterThanOrEqual(5);
   });
 });
 

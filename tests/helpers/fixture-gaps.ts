@@ -112,6 +112,30 @@ export function recordedGaps(name: string): RecordedGap[] {
   // An absent `expect` or `repoWideGaps` is a malformed record, not an assertion that
   // there are no gaps. Defaulting to `[]` would let a misspelled key read as "expects
   // nothing" — a record that asserts nothing while looking like one that does.
+  return parseRecord(parsed, name);
+}
+
+/**
+ * Validates a parsed `expected.json` and returns its recorded gaps.
+ *
+ * Split from the file read so a test can reach these rules with a synthetic record. The
+ * test that named this behaviour previously passed a non-existent fixture, so
+ * `readFileSync` threw `ENOENT` before any of it ran and a bare `.toThrow()` accepted
+ * that — the rule it named was defended by nothing (§7a).
+ */
+export function parseRecord(
+  parsed: {
+    expect?: {
+      repoWideGaps?: ReadonlyArray<{
+        kind?: string | undefined;
+        snapshot?: string | undefined;
+        site?: { file?: string | undefined } | undefined;
+        reasonCode?: string | undefined;
+      }>;
+    };
+  },
+  name: string,
+): RecordedGap[] {
   if (parsed.expect === undefined) {
     throw new Error(`${name}: expected.json has no "expect" object.`);
   }
