@@ -19,7 +19,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
-    "test:randomized": "vitest run tests/unit/analysis/seeds-randomized.test.ts"
+    "test:randomized": "vitest run randomized"
   },
   "dependencies": {
     "commander": "^15.0.0",
