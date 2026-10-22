@@ -13,15 +13,21 @@ import { configDefaults, defineConfig } from "vitest/config";
  */
 const EXCLUDE_RANDOMIZED = process.env["OMEN_EXCLUDE_RANDOMIZED"] === "1";
 
+/**
+ * Matched by name, not listed file by file, so the exclusion here and the dedicated
+ * job's `vitest run randomized` filter select the same set. Two hand-maintained lists
+ * would drift, and the drift would be silent in the direction that matters: a randomized
+ * file excluded from the main run and never added to the randomized job runs nowhere.
+ */
+const RANDOMIZED_GLOB = "tests/**/*-randomized.test.ts";
+
 export default defineConfig({
   test: {
     environment: "node",
     include: ["tests/**/*.test.ts"],
     exclude: [
       ...configDefaults.exclude,
-      ...(EXCLUDE_RANDOMIZED
-        ? ["tests/unit/analysis/seeds-randomized.test.ts"]
-        : []),
+      ...(EXCLUDE_RANDOMIZED ? [RANDOMIZED_GLOB] : []),
     ],
     // Builds dist/cli.js once in the main process. A per-file build races: Vitest runs
     // test files in parallel workers, and two tsup processes writing the same output
