@@ -94,6 +94,7 @@ describe("classification against the frozen fixtures", () => {
     "seed-added-deleted",
     "seed-declaration-form-change",
     "seed-declaration-keyword",
+    "seed-declaration-keyword-one-line",
     "identity-overload",
     "identity-re-export",
     "overlay-basic",

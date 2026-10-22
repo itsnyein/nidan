@@ -1,0 +1,21 @@
+{
+  "description": "The milestone review's own reproduction: both declarators on one line. Per-line attribution reaches both, so this is the control that isolates what sibling propagation adds in the two-line shape.",
+  "expect": {
+    "run": {
+      "status": "ok",
+      "analysisMode": "tsconfig",
+      "reasons": []
+    },
+    "seeds": [
+      {
+        "key": "src/a.ts :: :: function :: a",
+        "change": "modified"
+      },
+      {
+        "key": "src/a.ts :: :: function :: b",
+        "change": "modified"
+      }
+    ],
+    "repoWideGaps": []
+  }
+}
