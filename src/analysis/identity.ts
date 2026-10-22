@@ -84,6 +84,15 @@ export interface Callable {
   /** Identifies the declaring statement, so siblings can be found. `""` when there is none. */
   readonly statementId: string;
   /**
+   * The declaring statement's own line span, or `0`s when there is none.
+   *
+   * Wider than `ranges`, which covers only this declarator. A change to the shared part
+   * of the statement — the keyword on its own line — falls inside no declarator, so it
+   * needs the statement's span to be attributed at all.
+   */
+  readonly statementStartLine: number;
+  readonly statementEndLine: number;
+  /**
    * The declaration's tokens with formatting removed, as a single string.
    *
    * Comparing these across snapshots is how a reformatting-only change is told from a
@@ -403,6 +412,27 @@ function build(
     ranges: span.ranges,
     sharedTokens: sharedStatementTokens(node).join("\u0000"),
     statementId: statementIdOf(node),
+    ...statementSpanOf(node),
+  };
+}
+
+/** The declaring statement's line span, for a declarator that shares one. */
+function statementSpanOf(node: Node): {
+  statementStartLine: number;
+  statementEndLine: number;
+} {
+  const none = { statementStartLine: 0, statementEndLine: 0 };
+  if (!Node.isVariableDeclaration(node)) return none;
+  const statement = node.getFirstAncestorByKind(SyntaxKind.VariableStatement);
+  if (statement === undefined) return none;
+  if (statement.getDeclarations().length === 1) return none;
+
+  const sourceFile = node.getSourceFile();
+  return {
+    statementStartLine: sourceFile.getLineAndColumnAtPos(
+      statement.getStart(true),
+    ).line,
+    statementEndLine: sourceFile.getLineAndColumnAtPos(statement.getEnd()).line,
   };
 }
 
