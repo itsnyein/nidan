@@ -27,6 +27,7 @@ export function expectEveryChangedLineAccounted(
   result: SeedResult,
   diff: DiffResult,
   head?: CallableIndex,
+  base?: CallableIndex,
 ): void {
   const expected = changedLinesFromDiff(diff);
   const actual = result.coverage.map(
@@ -132,80 +133,39 @@ export function expectEveryChangedLineAccounted(
     }
   }
 
-  // A line labelled `seeded` must actually lie inside a reported seed's range. Without
-  // this the assertion would only check that `mapSeeds` labelled every line — and a
-  // bucket decided for the hunk as a whole would label an outside line `seeded` and pass,
-  // which is the precise shape of the mixed-hunk miss. Checking the label against the
-  // reported seed ranges is what makes this an invariant rather than a restatement of
-  // the implementation.
+  // A line labelled `seeded` must lie inside a declaration of a callable that was
+  // actually seeded. Without this the assertion would only check that `mapSeeds`
+  // labelled every line — and a bucket decided for the hunk as a whole would label an
+  // outside line `seeded` and pass.
   //
-  // Head side only: a `modified` seed reports its **head** range, so a base-side line of
-  // the same callable has no reported range to check against. Added and deleted seeds are
-  // covered on their own snapshot. This is a real limit on the invariant's strength, not
-  // an oversight.
-  // And for `ambiguous`: the line must actually lie inside a colliding declaration, and
-  // that collision must be reported. Otherwise the bucket becomes a place to hide a line
-  // nobody accounted for — the same escape hatch the other labels needed closing.
-  if (head !== undefined) {
-    const reported = new Set(
-      result.gaps
-        .filter((gap) => gap.kind === "ambiguous-identity")
-        .map((gap) => `${gap.filePath}:${gap.key}`),
+  // Checked on **both** snapshots. It was head-only, which left a base-side loss able to
+  // pass: a `modified` seed reports its head range, so base-side lines had nothing to
+  // check against. Using the snapshot's own callable index supplies that range, and
+  // covers deleted seeds, which exist only in base.
+  const seededKeys = new Set(result.seeds.map((seed) => seed.key));
+  for (const [snapshot, index] of [
+    ["head", head],
+    ["base", base],
+  ] as const) {
+    if (index === undefined) continue;
+    const seededRanges = index.callables.filter((callable) =>
+      seededKeys.has(callable.key),
     );
     for (const line of result.coverage) {
-      if (line.bucket !== "ambiguous" || line.snapshot !== "head") continue;
-      const inside = head.collisions.some(
-        (collision) =>
-          collision.filePath === line.filePath &&
-          reported.has(`${collision.filePath}:${collision.key}`) &&
-          collision.spans.some(
-            (span) => line.line >= span.start && line.line <= span.end,
+      if (line.bucket !== "seeded" || line.snapshot !== snapshot) continue;
+      const inside = seededRanges.some(
+        (callable) =>
+          callable.filePath === line.filePath &&
+          callable.ranges.some(
+            (range) =>
+              line.line >= range.startLine && line.line <= range.endLine,
           ),
       );
       expect(
         inside,
-        `head line ${String(line.line)} of ${line.filePath} is labelled "ambiguous" but lies inside no reported collision`,
+        `${snapshot} line ${String(line.line)} of ${line.filePath} is labelled "seeded" but lies inside no seeded callable's declaration`,
       ).toBe(true);
     }
-  }
-
-  // The same corroboration for `formatting`. Trusting this label lets a hunk that seeds
-  // something relabel its *uncovered* lines as formatting-only and vanish them: no gap,
-  // no seed, accounting balanced. A label is only evidence if something independent
-  // agrees with it.
-  if (head !== undefined) {
-    const equal = new Set(result.formattingEqualKeys);
-    const equalRanges = head.callables.filter((callable) =>
-      equal.has(callable.key),
-    );
-    for (const line of result.coverage) {
-      if (line.bucket !== "formatting" || line.snapshot !== "head") continue;
-      const inside = equalRanges.some(
-        (callable) =>
-          callable.filePath === line.filePath &&
-          line.line >= callable.startLine &&
-          line.line <= callable.endLine,
-      );
-      expect(
-        inside,
-        `head line ${String(line.line)} of ${line.filePath} is labelled "formatting" but lies inside no callable that compared equal`,
-      ).toBe(true);
-    }
-  }
-
-  const seedRanges = result.seeds.filter((seed) => seed.snapshot === "head");
-  for (const line of result.coverage) {
-    if (line.bucket !== "seeded" || line.snapshot !== "head") continue;
-    const inside = seedRanges.some(
-      (seed) =>
-        seed.filePath === line.filePath &&
-        line.line >= seed.startLine &&
-        line.line <= seed.endLine,
-    );
-    expect(
-      inside,
-      `head line ${String(line.line)} of ${line.filePath} is labelled "seeded" but lies outside every reported seed range`,
-    ).toBe(true);
   }
 }
 

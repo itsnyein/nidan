@@ -118,6 +118,12 @@ export function mapSeeds(input: MapSeedsInput): SeedResult {
     for (const key of attribution.keys) touched.add(key);
   }
 
+  // A change to a statement's shared tokens modifies **every** declarator it declares,
+  // whichever line the diff touched (§8.2 as amended 2026-10-22). Attribution is per
+  // changed line, so a sibling on an untouched line would otherwise have a changed
+  // signature that no hunk points at — modified and unreported.
+  addSharedTokenSiblings(touched, input, baseByKey, headByKey);
+
   const seeds: Seed[] = [];
   const filteredKeys = new Set<string>();
   for (const key of touched) {
@@ -255,6 +261,38 @@ function coverageOf(
   return covered;
 }
 
+/**
+ * Adds the declarator siblings of any touched callable whose shared statement tokens
+ * changed.
+ *
+ * Only when they actually changed: a sibling whose initializer alone was edited must not
+ * drag the others in, which is why this keys on the shared tokens differing rather than
+ * on the statement being multi-declarator.
+ */
+function addSharedTokenSiblings(
+  touched: Set<string>,
+  input: MapSeedsInput,
+  baseByKey: ReadonlyMap<string, Callable>,
+  headByKey: ReadonlyMap<string, Callable>,
+): void {
+  for (const key of [...touched]) {
+    const inBase = baseByKey.get(key);
+    const inHead = headByKey.get(key);
+    if (inBase === undefined || inHead === undefined) continue;
+    if (inBase.statementId === "" || inHead.statementId === "") continue;
+    if (inBase.sharedTokens === inHead.sharedTokens) continue;
+
+    for (const [index, id] of [
+      [input.base, inBase.statementId],
+      [input.head, inHead.statementId],
+    ] as const) {
+      for (const sibling of index.callables) {
+        if (sibling.statementId === id) touched.add(sibling.key);
+      }
+    }
+  }
+}
+
 function indexByKey(index: CallableIndex): Map<string, Callable> {
   return new Map(index.callables.map((callable) => [callable.key, callable]));
 }
@@ -375,8 +413,14 @@ function innermostOwners(
   callables: readonly Callable[],
   line: number,
 ): Callable[] {
-  const containing = callables.filter(
-    (callable) => line >= callable.startLine && line <= callable.endLine,
+  // Tested against each declaration's **own** range, not the hull. An overload set's
+  // hull can contain top-level statements between non-contiguous signatures, and owning
+  // them would make a real change compare equal inside an unchanged callable (§7.2 as
+  // amended 2026-10-21).
+  const containing = callables.filter((callable) =>
+    callable.ranges.some(
+      (range) => line >= range.startLine && line <= range.endLine,
+    ),
   );
 
   return containing.filter(
@@ -413,8 +457,12 @@ function bucketFor(
 
 /** Whether `inner` sits strictly within `outer`, by character position. */
 function isStrictlyInside(inner: Callable, outer: Callable): boolean {
-  const within =
-    inner.startPos >= outer.startPos && inner.endPos <= outer.endPos;
+  // Within **one** of the outer callable's declarations, not merely within its hull:
+  // a callable sitting between two non-contiguous overload signatures is not nested
+  // inside them.
+  const within = outer.ranges.some(
+    (range) => inner.startPos >= range.startPos && inner.endPos <= range.endPos,
+  );
   const identical =
     inner.startPos === outer.startPos && inner.endPos === outer.endPos;
   return within && !identical;

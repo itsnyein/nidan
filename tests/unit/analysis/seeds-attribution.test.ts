@@ -79,14 +79,14 @@ async function run(files: {
     pair.head.project.getSourceFiles(),
     repo.path,
   );
-  const result = mapSeeds({
-    diff,
-    base: enumerateCallables(pair.base.project.getSourceFiles(), repo.path),
-    head,
-  });
+  const base = enumerateCallables(
+    pair.base.project.getSourceFiles(),
+    repo.path,
+  );
+  const result = mapSeeds({ diff, base, head });
 
   // Every throwaway case is held to the invariant too, not only the frozen fixtures.
-  expectEveryChangedLineAccounted(result, diff, head);
+  expectEveryChangedLineAccounted(result, diff, head, base);
 
   return {
     result,

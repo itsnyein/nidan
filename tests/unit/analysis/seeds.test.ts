@@ -40,11 +40,11 @@ async function seedOutcome(name: string): Promise<Outcome> {
     pair.head.project.getSourceFiles(),
     repo.path,
   );
-  const result = mapSeeds({
-    diff,
-    base: enumerateCallables(pair.base.project.getSourceFiles(), repo.path),
-    head,
-  });
+  const base = enumerateCallables(
+    pair.base.project.getSourceFiles(),
+    repo.path,
+  );
+  const result = mapSeeds({ diff, base, head });
 
   // Asserted here rather than in each test, so **every** fixture the suite exercises is
   // held to the line-level invariant — including ones added later, whose authors need not
@@ -53,7 +53,7 @@ async function seedOutcome(name: string): Promise<Outcome> {
   // Gap records are **not** asserted here. `fixture-gap-coverage.test.ts` enumerates every
   // fixture directory and asserts all of them, so a second call would be redundant: its
   // removal changed no outcome, which is the definition of a check that is not checking.
-  expectEveryChangedLineAccounted(result, diff, head);
+  expectEveryChangedLineAccounted(result, diff, head, base);
 
   return {
     result,
@@ -93,6 +93,7 @@ describe("classification against the frozen fixtures", () => {
     "seed-comment-change",
     "seed-added-deleted",
     "seed-declaration-form-change",
+    "seed-declaration-keyword",
     "identity-overload",
     "identity-re-export",
     "overlay-basic",
@@ -255,29 +256,6 @@ describe("boundary insertions and deletions", () => {
       // formatting-filtered when its own changed text is formatting-only.
       expect(outcome.result.accounting.formattingFiltered).toBe(0);
       expect(outcome.result.accounting.gapOnly).toBe(1);
-    },
-    TIMEOUT_MS,
-  );
-});
-
-describe("rulings not yet implemented", () => {
-  it(
-    "seed-declaration-keyword does not yet seed its declarators — pending T2.7",
-    async () => {
-      // Asserts the ruling is **still** unimplemented, rather than skipping the fixture.
-      // A skip would hide a regression and would outlive its fix silently
-      // (`decisions.md` §7a); this fails the day T2.7 lands and forces the test below to
-      // be replaced by a real assertion in the frozen-fixture list above.
-      //
-      // The keyword `let` → `var` is currently filtered as formatting, so neither
-      // declarator is seeded.
-      const result = await seedCase("seed-declaration-keyword");
-
-      expect(actualSeeds(result)).toEqual([]);
-      expect(expectedSeeds("seed-declaration-keyword")).toEqual([
-        ["src/a.ts :: :: function :: a", "modified"],
-        ["src/a.ts :: :: function :: b", "modified"],
-      ]);
     },
     TIMEOUT_MS,
   );

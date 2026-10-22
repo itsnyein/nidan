@@ -56,10 +56,9 @@ afterEach(async () => {
 // a failure that does not occur, and the entry would later need removing for a reason
 // unrelated to the fix. Its seed expectation is pending in `seeds.test.ts`.
 const PENDING = new Map<string, string>([
-  [
-    "seed-overload-hull-gap",
-    "T2.7 — overload sets own each declaration's own range",
-  ],
+  // Empty: every ruling the fixtures record is implemented. Entries here assert the
+  // **current wrong behaviour**, so an implemented ruling makes its entry fail and forces
+  // this removal — a skip-list that cannot outlive its fix.
 ]);
 
 describe("every fixture is asserted against its record", () => {
@@ -84,16 +83,11 @@ describe("every fixture is asserted against its record", () => {
     expect(names.length).toBeGreaterThan(0);
   });
 
-  it.each([...PENDING.entries()])(
-    "%s still fails, pending %s",
-    async (name) => {
-      // Asserts the pending fixture is **still** unimplemented. When the ruling lands,
-      // this test fails and the entry must be removed from PENDING — a skip-list that
-      // cannot outlive its fix.
-      await expect(runFixture(name)).rejects.toThrow();
-    },
-    TIMEOUT_MS,
-  );
+  it("has no pending fixtures", () => {
+    // Guards the empty map: if an entry is added, this fails until it is justified and
+    // this test updated, so parking a fixture is never silent.
+    expect([...PENDING.keys()]).toEqual([]);
+  });
 
   it.each(names)(
     "%s produces exactly the gaps it records",
