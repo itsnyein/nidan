@@ -42,6 +42,15 @@ export interface DeclarationRange {
 export interface Callable {
   /** `relativePosixPath :: containerChain :: declarationKind :: name [:: static]` */
   readonly key: string;
+  /**
+   * The declaration this callable was built from — the implementation signature for an
+   * overload set.
+   *
+   * Reference discovery needs a node to ask the compiler about, and recovering one from
+   * `startPos` would mean a second, parallel idea of which node a key denotes. Two such
+   * ideas drift: the one here is the one the key was computed from, by construction.
+   */
+  readonly declaration: Node;
   /** Repository-relative POSIX path. */
   readonly filePath: string;
   /** Enclosing classes and callables, outermost first. */
@@ -400,6 +409,7 @@ function build(
   return {
     tokenSignature: tokenSignatureOf(node),
     key: buildKey(filePath, containerChain, kind, name, isStatic),
+    declaration: node,
     filePath,
     containerChain,
     kind,

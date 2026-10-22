@@ -1,0 +1,490 @@
+import { Node, type ReferencedSymbol, type SourceFile } from "ts-morph";
+
+import type { Callable, CallableIndex } from "./identity.js";
+import type { Seed, Snapshot } from "./seeds.js";
+
+/**
+ * Why a reference is not a usage.
+ *
+ * Each reason is reported, never collapsed into a bare "filtered". The differential
+ * harness asserts the reason, so a filter that starts swallowing the wrong references
+ * fails a test that names it — the mistake the formatting bucket made during seed
+ * mapping, where an unexamined catch-all absorbed real changes while the count balanced.
+ */
+export type FilterReason =
+  | "declaration"
+  | "import-specifier"
+  | "export-specifier"
+  | "type-only"
+  | "heritage-clause";
+
+/** A reference whose classification is not yet ruled on, and so is reported as neither. */
+export type UndecidedReason = "implicit-constructor-heritage";
+
+export interface UsageResolution {
+  readonly status: "exact" | "ambiguous";
+  readonly candidates?: readonly string[];
+}
+
+export interface ReferenceSite {
+  readonly filePath: string;
+  readonly line: number;
+  /** Character offset in the file, used by the differential harness to match occurrences. */
+  readonly pos: number;
+}
+
+export interface Usage extends ReferenceSite {
+  readonly seedKey: string;
+  /** The enclosing supported callable's key, or `<path> :: module` for top-level code. */
+  readonly from: string;
+  readonly resolution: UsageResolution;
+}
+
+export interface FilteredReference extends ReferenceSite {
+  readonly seedKey: string;
+  readonly reason: FilterReason;
+}
+
+export interface UndecidedReference extends ReferenceSite {
+  readonly seedKey: string;
+  readonly reason: UndecidedReason;
+}
+
+export interface ReferenceResult {
+  readonly usages: readonly Usage[];
+  readonly filtered: readonly FilteredReference[];
+  /**
+   * References deliberately left unclassified, pending a ruling.
+   *
+   * Separate from both other buckets on purpose. Putting them in `filtered` would freeze
+   * an answer nobody has given; dropping them would make a construction that no `super()`
+   * call reports disappear entirely, which is the one outcome ruled out in advance.
+   */
+  readonly undecided: readonly UndecidedReference[];
+}
+
+export interface SnapshotReferences {
+  readonly sourceFiles: readonly SourceFile[];
+  readonly index: CallableIndex;
+}
+
+export interface FindUsagesInput {
+  readonly seeds: readonly Seed[];
+  readonly base: SnapshotReferences;
+  readonly head: SnapshotReferences;
+  readonly repoRoot: string;
+}
+
+/**
+ * Finds the usages of every seed, with the references that were filtered and why.
+ *
+ * References are searched in the **usage-source snapshot**: head for an added or modified
+ * seed, base for a deleted one, because a deleted callable's callers only exist in base.
+ */
+export function findUsages(input: FindUsagesInput): ReferenceResult {
+  const usages: Usage[] = [];
+  const filtered: FilteredReference[] = [];
+  const undecided: UndecidedReference[] = [];
+
+  for (const seed of input.seeds) {
+    const snapshot = snapshotFor(seed.snapshot, input);
+    const callable = snapshot.index.callables.find(
+      (entry) => entry.key === seed.key,
+    );
+    // A seed whose key is not in the index cannot be searched for. That is not silence:
+    // seed mapping only emits keys it took from this same index, so this is unreachable
+    // rather than a case to degrade into.
+    if (callable === undefined) continue;
+
+    collectForSeed(seed, callable, snapshot, input.repoRoot, {
+      usages,
+      filtered,
+      undecided,
+    });
+  }
+
+  return {
+    usages: usages.sort(compareSites),
+    filtered: filtered.sort(compareSites),
+    undecided: undecided.sort(compareSites),
+  };
+}
+
+interface Buckets {
+  readonly usages: Usage[];
+  readonly filtered: FilteredReference[];
+  readonly undecided: UndecidedReference[];
+}
+
+function snapshotFor(
+  snapshot: Snapshot,
+  input: FindUsagesInput,
+): SnapshotReferences {
+  return snapshot === "base" ? input.base : input.head;
+}
+
+function collectForSeed(
+  seed: Seed,
+  callable: Callable,
+  snapshot: SnapshotReferences,
+  repoRoot: string,
+  buckets: Buckets,
+): void {
+  const searchNode = searchNodeFor(callable);
+  if (searchNode === undefined) return;
+
+  const target = targetSpansOf(callable, searchNode);
+
+  for (const group of searchNode.findReferences()) {
+    const resolution = resolutionOf(group, target, repoRoot);
+    for (const entry of group.getReferences()) {
+      const node = entry.getNode();
+      const site = siteOf(node, repoRoot);
+      const reason = filterReasonFor(node, entry.isDefinition() === true);
+
+      if (reason === "heritage-clause") {
+        classifyHeritageClause(node, seed, site, snapshot, repoRoot, buckets);
+        continue;
+      }
+      if (reason !== undefined) {
+        buckets.filtered.push({ seedKey: seed.key, reason, ...site });
+        continue;
+      }
+
+      buckets.usages.push({
+        seedKey: seed.key,
+        from: fromOf(node, snapshot, site.filePath),
+        resolution,
+        ...site,
+      });
+    }
+  }
+}
+
+/**
+ * The node whose references answer for this seed.
+ *
+ * A constructor is searched through its **class** name (§7.3): `new C()` and `super()`
+ * are references to the class, and a constructor's own name node does not exist.
+ */
+function searchNodeFor(callable: Callable): ReferenceSearchNode | undefined {
+  const declaration = callable.declaration;
+  if (callable.kind === "constructor") {
+    const classDeclaration = declaration.getFirstAncestor(
+      (ancestor) =>
+        Node.isClassDeclaration(ancestor) || Node.isClassExpression(ancestor),
+    );
+    return classDeclaration === undefined
+      ? undefined
+      : nameNodeOf(classDeclaration);
+  }
+  return nameNodeOf(declaration);
+}
+
+type ReferenceSearchNode = Node & { findReferences(): ReferencedSymbol[] };
+
+function nameNodeOf(node: Node): ReferenceSearchNode | undefined {
+  if (!Node.hasName(node)) return undefined;
+  const nameNode = node.getNameNode();
+  // An anonymous default export has no name node to search from; its references are
+  // reached through the export assignment, which is M4's `value-reference` work.
+  return Node.isReferenceFindable(nameNode) ? nameNode : undefined;
+}
+
+/** The filter rules of §9, in the order a reference can match them. */
+function filterReasonFor(
+  node: Node,
+  isDefinition: boolean,
+): FilterReason | undefined {
+  if (isDefinition) return "declaration";
+
+  const parent = node.getParent();
+  if (parent === undefined) return "declaration";
+
+  if (
+    Node.isImportSpecifier(parent) ||
+    Node.isImportClause(parent) ||
+    Node.isNamespaceImport(parent)
+  ) {
+    return "import-specifier";
+  }
+  if (Node.isExportSpecifier(parent)) return "export-specifier";
+
+  // A related symbol's own declaration — an interface member the seed implements, or a
+  // base method it overrides — is a declaration site, and `isDefinition` is false for it
+  // because it is not the definition of the *searched* symbol. Without this it is
+  // reported as a usage of the seed, which is a usage of nothing: the line declares the
+  // method, it does not call it.
+  if (isDeclarationNameNode(node, parent)) return "declaration";
+  if (isHeritageReference(parent)) return "heritage-clause";
+  if (isTypeOnlyPosition(node)) return "type-only";
+
+  return undefined;
+}
+
+/**
+ * Whether the reference is the name of a declaration rather than a use of one.
+ *
+ * Tested by asking whether the parent is itself one of its symbol's declarations, not by
+ * listing node kinds. `g.greet()` also has a name node — a kind list that forgot to
+ * exclude property access filtered every member call as a declaration, which is how this
+ * was first written and how the interface probe caught it.
+ */
+function isDeclarationNameNode(node: Node, parent: Node): boolean {
+  if (!Node.hasName(parent) || parent.getNameNode() !== node) return false;
+  return (
+    parent
+      .getSymbol()
+      ?.getDeclarations()
+      .some((declaration) => declaration === parent) === true
+  );
+}
+
+function isHeritageReference(parent: Node): boolean {
+  return (
+    Node.isExpressionWithTypeArguments(parent) &&
+    Node.isHeritageClause(parent.getParent())
+  );
+}
+
+/**
+ * Whether the reference sits in a type position rather than a value one.
+ *
+ * Walks ancestors rather than testing the immediate parent: `Promise<Client>` and
+ * `(x: Client) => void` both put the reference several nodes below the type node, and a
+ * parent-only test would report an annotation as a usage.
+ */
+function isTypeOnlyPosition(node: Node): boolean {
+  let current: Node | undefined = node;
+  while (current !== undefined) {
+    if (Node.isTypeNode(current)) return true;
+    // A heritage clause contains a type node in `implements`, but `extends` on a class is
+    // a value position; stopping here keeps the heritage rule the one that decides.
+    if (Node.isHeritageClause(current)) return false;
+    if (Node.isStatement(current)) return false;
+    current = current.getParent();
+  }
+  return false;
+}
+
+/**
+ * A heritage clause is filtered when the subclass has an explicit constructor, because
+ * that constructor's `super()` call reports the construction and counting both would
+ * report it twice. The implicit-constructor case is **not ruled on**, so it goes to
+ * `undecided` rather than quietly into either answer: with no `super()` in the source,
+ * filtering it would leave the construction reported by nothing at all.
+ */
+function classifyHeritageClause(
+  node: Node,
+  seed: Seed,
+  site: ReferenceSite,
+  snapshot: SnapshotReferences,
+  repoRoot: string,
+  buckets: Buckets,
+): void {
+  const subclass = node.getFirstAncestor(
+    (ancestor) =>
+      Node.isClassDeclaration(ancestor) || Node.isClassExpression(ancestor),
+  );
+  const constructor =
+    subclass !== undefined &&
+    (Node.isClassDeclaration(subclass) || Node.isClassExpression(subclass))
+      ? subclass.getConstructors()[0]
+      : undefined;
+
+  if (constructor === undefined) {
+    buckets.undecided.push({
+      seedKey: seed.key,
+      reason: "implicit-constructor-heritage",
+      ...site,
+    });
+    return;
+  }
+
+  buckets.filtered.push({
+    seedKey: seed.key,
+    reason: "heritage-clause",
+    ...site,
+  });
+
+  // `super` is not a reference to the class by name, so the compiler's reference search
+  // never returns it. The heritage clause is the only thing connecting the two classes,
+  // which is why the construction is collected here rather than from the search results.
+  for (const call of constructor.getDescendants()) {
+    if (!Node.isCallExpression(call)) continue;
+    if (!Node.isSuperExpression(call.getExpression())) continue;
+    const superSite = siteOf(call.getExpression(), repoRoot);
+    buckets.usages.push({
+      seedKey: seed.key,
+      from: fromOf(call, snapshot, superSite.filePath),
+      resolution: { status: "exact" },
+      ...superSite,
+    });
+  }
+}
+
+/** The enclosing supported callable, or the module node (§9). */
+function fromOf(
+  node: Node,
+  snapshot: SnapshotReferences,
+  filePath: string,
+): string {
+  const pos = node.getStart();
+  let innermost: Callable | undefined;
+
+  for (const callable of snapshot.index.callables) {
+    if (callable.filePath !== filePath) continue;
+    if (!containsPos(callable, pos)) continue;
+    if (innermost === undefined || isInsideOf(callable, innermost)) {
+      innermost = callable;
+    }
+  }
+
+  return innermost?.key ?? `${filePath} :: module`;
+}
+
+function containsPos(callable: Callable, pos: number): boolean {
+  return callable.ranges.some(
+    (range) => pos >= range.startPos && pos < range.endPos,
+  );
+}
+
+/** Whether `inner`'s span lies within `outer`'s, so the innermost owner can be chosen. */
+function isInsideOf(inner: Callable, outer: Callable): boolean {
+  return inner.startPos >= outer.startPos && inner.endPos <= outer.endPos;
+}
+
+/** A span in one file, used to decide whether a resolved declaration is the seed. */
+interface TargetSpans {
+  readonly filePath: string;
+  readonly spans: ReadonlyArray<{
+    readonly start: number;
+    readonly end: number;
+  }>;
+}
+
+/**
+ * The declarations a reference must resolve to for this seed.
+ *
+ * For an overload set this is every member declaration, not just the implementation: a
+ * caller resolves to whichever signature matched, and all of them are the same callable.
+ * For a constructor it is the class, since that is what the search ran on.
+ */
+function targetSpansOf(
+  callable: Callable,
+  searchNode: ReferenceSearchNode,
+): TargetSpans {
+  if (callable.kind === "constructor") {
+    const classDeclaration = searchNode.getParent();
+    return {
+      filePath: callable.filePath,
+      spans:
+        classDeclaration === undefined
+          ? []
+          : [
+              {
+                start: classDeclaration.getStart(),
+                end: classDeclaration.getEnd(),
+              },
+            ],
+    };
+  }
+  return {
+    filePath: callable.filePath,
+    spans: callable.ranges.map((range) => ({
+      start: range.startPos,
+      end: range.endPos,
+    })),
+  };
+}
+
+/**
+ * `exact` when the group's definition resolves to the seed, `ambiguous` when it does not.
+ *
+ * Group *count* is not the question. The compiler returns one group per referenced
+ * symbol, and an ordinary re-export produces a second group for the alias — so counting
+ * groups would call every barrel ambiguous, which the approved barrel fixtures say it is
+ * not. What matters is where the group's definition lands after alias resolution.
+ */
+function resolutionOf(
+  group: ReferencedSymbol,
+  target: TargetSpans,
+  repoRoot: string,
+): UsageResolution {
+  const declarations = resolvedDeclarationsOf(group);
+  if (declarations.some((node) => isWithinTarget(node, target))) {
+    return { status: "exact" };
+  }
+
+  // Repository-relative and deduplicated: an absolute path would make the report depend
+  // on where the repository sits on disk, and the alias walk visits the same declaration
+  // from more than one symbol.
+  const candidates = [
+    ...new Set(
+      declarations.map(
+        (node) =>
+          `${siteOf(node, repoRoot).filePath}:${String(node.getStartLineNumber())}`,
+      ),
+    ),
+  ].sort();
+
+  return { status: "ambiguous", candidates };
+}
+
+/** The group definition's declarations, with import/export aliases followed to the end. */
+function resolvedDeclarationsOf(group: ReferencedSymbol): Node[] {
+  const definition = group.getDefinition().getDeclarationNode();
+  if (definition === undefined) return [];
+
+  let symbol = definition.getSymbol();
+  const seen = new Set<unknown>();
+  const declarations: Node[] = [definition];
+
+  while (symbol !== undefined && !seen.has(symbol)) {
+    seen.add(symbol);
+    declarations.push(...symbol.getDeclarations());
+    symbol = symbol.getAliasedSymbol();
+  }
+
+  return declarations;
+}
+
+function isWithinTarget(node: Node, target: TargetSpans): boolean {
+  if (!endsWith(node, target.filePath)) return false;
+  const start = node.getStart();
+  return target.spans.some((span) => start >= span.start && start < span.end);
+}
+
+function endsWith(node: Node, filePath: string): boolean {
+  return node
+    .getSourceFile()
+    .getFilePath()
+    .replace(/\\/gu, "/")
+    .endsWith(`/${filePath}`);
+}
+
+function siteOf(node: Node, repoRoot: string): ReferenceSite {
+  const absolute = node.getSourceFile().getFilePath().replace(/\\/gu, "/");
+  const root = repoRoot.replace(/\\/gu, "/");
+  const filePath = absolute.startsWith(`${root}/`)
+    ? absolute.slice(root.length + 1)
+    : absolute;
+  return {
+    filePath,
+    line: node.getStartLineNumber(),
+    pos: node.getStart(),
+  };
+}
+
+/** Deterministic order: file, then line, then position, then seed. */
+function compareSites<T extends ReferenceSite & { readonly seedKey: string }>(
+  left: T,
+  right: T,
+): number {
+  if (left.filePath !== right.filePath)
+    return left.filePath < right.filePath ? -1 : 1;
+  if (left.line !== right.line) return left.line - right.line;
+  if (left.pos !== right.pos) return left.pos - right.pos;
+  if (left.seedKey === right.seedKey) return 0;
+  return left.seedKey < right.seedKey ? -1 : 1;
+}
