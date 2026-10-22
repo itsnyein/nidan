@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -116,6 +116,21 @@ async function runFixture(name: string): Promise<void> {
 
   expectGapsMatchFixture(result, name);
 }
+
+describe("the case table lists every fixture", () => {
+  it("names each fixture directory exactly once", () => {
+    // The table had drifted sixteen entries behind the directories before anyone noticed,
+    // because nothing compared the two. Enumerating here makes the index self-correcting:
+    // a fixture added without a row fails this, and a row naming a directory that no
+    // longer exists fails it too.
+    const table = readFileSync(join("tests", "fixtures", "README.md"), "utf8");
+    const listed = [...table.matchAll(/^\| \[`([^`]+)`\]\(/gmu)].map(
+      (match) => match[1],
+    );
+
+    expect([...listed].sort()).toEqual(allFixtures());
+  });
+});
 
 describe("the gap comparison is a multiset", () => {
   const gap = (reasonCode = "no-enclosing-callable"): RecordedGap => ({
