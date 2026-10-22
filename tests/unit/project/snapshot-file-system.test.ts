@@ -296,7 +296,7 @@ describe("case sensitivity", () => {
       const { repo, snapshot } = await headSnapshot("overlay-basic");
 
       // Deliberate: a case-insensitive filesystem would resolve this, so a repository
-      // that builds on macOS could fail on Linux. omen reports it as missing on every
+      // that builds on macOS could fail on Linux. nidan reports it as missing on every
       // platform rather than varying by host, which is what keeps output deterministic.
       expect(
         snapshot.host.fileExistsSync(join(repo.path, "src/FORMAT.ts")),

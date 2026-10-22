@@ -8,14 +8,14 @@
 Analyzing two refs means having two source trees available to a type checker at once.
 
 Checking out each ref is the obvious approach and is unacceptable: it mutates the user's
-working tree, destroys uncommitted work, and makes running omen a dangerous thing to do
+working tree, destroys uncommitted work, and makes running nidan a dangerous thing to do
 mid-task. Cloning to a temporary directory avoids that but copies the repository twice and
 still leaves dependencies unresolved — `node_modules` is not committed, so a checked-out
 snapshot has no types for any import.
 
 There is also a correctness trap. If snapshot reads fall back to disk when a path is
 missing from the Git tree, the working tree leaks into results: an uncommitted edit silently
-changes what omen reports about a committed ref.
+changes what nidan reports about a committed ref.
 
 ## Decision
 
@@ -33,7 +33,7 @@ The working tree is never written to.
 
 ## Consequences
 
-- omen is safe to run at any time, including mid-edit, with no checkout and no clone.
+- nidan is safe to run at any time, including mid-edit, with no checkout and no clone.
 - Results describe the refs that were asked about. Uncommitted edits and untracked files
   are invisible — which is the point, and is why a leak test is part of the acceptance
   criteria.
@@ -49,7 +49,7 @@ The working tree is never written to.
   that failed to resolve.
 - Symlinks and submodules inside a snapshot are skipped and counted, because a Git tree
   entry for a symlink is a path string, not a file.
-- omen never installs dependencies, never reaches the network, never runs lifecycle
+- nidan never installs dependencies, never reaches the network, never runs lifecycle
   scripts, and never executes repository code.
 
 ## Amendment: path comparison is case-sensitive everywhere (2026-10-20)
@@ -58,11 +58,11 @@ The snapshot reports itself as case-sensitive regardless of the host filesystem,
 lookup matches only the exact case recorded in Git.
 
 **Why:** the alternative is to mirror the host, which makes resolution — and therefore the
-report — depend on the machine omen ran on. That contradicts the determinism rules, and
+report — depend on the machine nidan ran on. That contradicts the determinism rules, and
 byte-identical output across machines is a published guarantee.
 
 **Cost, stated plainly:** an import whose case differs from the committed path resolves on
-macOS and Windows but is reported by omen as an `unresolved-module` gap. A user whose
+macOS and Windows but is reported by nidan as an `unresolved-module` gap. A user whose
 project builds locally can see a gap they consider spurious. The mitigating fact is that
 the same import genuinely breaks on a case-sensitive filesystem, which is what most Linux
 CI runners use — so the gap reports a real portability bug rather than inventing one.

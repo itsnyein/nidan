@@ -41,7 +41,7 @@ const CASES = 24;
  * Opt-in locally, always on in CI — the dedicated randomized job sets it, and the guard
  * in `seeds-randomized.test.ts` fails there if it is ever dropped.
  */
-const RANDOMIZED = process.env["OMEN_RANDOMIZED"] === "1";
+const RANDOMIZED = process.env["NIDAN_RANDOMIZED"] === "1";
 
 const TSCONFIG = JSON.stringify(
   {
@@ -77,7 +77,7 @@ interface Outcome {
  * in memory when it does.
  */
 async function runCase(generated: GeneratedCase): Promise<Outcome> {
-  const caseDir = await mkdtemp(join(tmpdir(), "omen-references-"));
+  const caseDir = await mkdtemp(join(tmpdir(), "nidan-references-"));
   try {
     return await analyseCase(generated, caseDir);
   } finally {
@@ -205,7 +205,7 @@ describe("the generated reference suite is not silently disabled", () => {
     // and reports nothing, which is the failure mode worth a test of its own.
     expect(
       process.env["CI"] === undefined || RANDOMIZED,
-      "CI must set OMEN_RANDOMIZED=1 — the generated reference suite must never silently stop running",
+      "CI must set NIDAN_RANDOMIZED=1 — the generated reference suite must never silently stop running",
     ).toBe(true);
   });
 });

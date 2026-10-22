@@ -103,7 +103,7 @@ describe("config discovery", () => {
       // Written in the fixture's tsconfig and must survive untouched.
       expect(options.strict).toBe(true);
       expect(options.noEmit).toBe(true);
-      // The one documented exception: omen analyzes .js whether or not the project does.
+      // The one documented exception: nidan analyzes .js whether or not the project does.
       expect(options.allowJs).toBe(true);
     },
     TIMEOUT_MS,

@@ -60,7 +60,7 @@ async function run(files: {
   base: Record<string, string>;
   head: Record<string, string>;
 }): Promise<Outcome> {
-  const caseDir = await mkdtemp(join(tmpdir(), "omen-seeds-"));
+  const caseDir = await mkdtemp(join(tmpdir(), "nidan-seeds-"));
   cleanups.push(() => rm(caseDir, { recursive: true, force: true }));
   for (const [snapshot, entries] of Object.entries(files)) {
     await mkdir(join(caseDir, snapshot), { recursive: true });
@@ -305,7 +305,7 @@ describe("gap ordering is a total order", () => {
       // head line 5 — the last two tying on (file, line, kind). The old comparator never
       // returned 0 and broke that tie as `left.kind < right.kind ? -1 : 1`, returning 1
       // for *both* orderings. An inconsistent comparator leaves sort order unspecified by
-      // the language, so determinism rested on the engine's sort rather than on omen —
+      // the language, so determinism rested on the engine's sort rather than on nidan —
       // a latent cross-version risk for M5's byte-identical-JSON criterion.
       const base = Array.from(
         { length: 8 },

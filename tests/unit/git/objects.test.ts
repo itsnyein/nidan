@@ -37,7 +37,7 @@ async function repoWith(
   files: CaseFiles,
   extra?: (caseDir: string) => Promise<void>,
 ): Promise<FixtureRepo> {
-  const caseDir = await mkdtemp(join(tmpdir(), "omen-case-"));
+  const caseDir = await mkdtemp(join(tmpdir(), "nidan-case-"));
   cleanups.push(() => rm(caseDir, { recursive: true, force: true }));
   for (const [snapshot, entries] of [
     ["base", files.base],

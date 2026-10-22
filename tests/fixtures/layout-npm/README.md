@@ -12,5 +12,5 @@ weight is `repoWideGaps: []`: if the layout were not handled, `tiny-ui` would be
 classified with `exact` resolution.
 
 Dependencies live in the case's `node_modules/`, which the harness copies into the work
-tree **after** both commits. They are never committed — omen reads dependencies from
+tree **after** both commits. They are never committed — nidan reads dependencies from
 disk, not from a snapshot, and this case would be meaningless if they came from Git.

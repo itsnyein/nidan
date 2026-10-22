@@ -7,7 +7,7 @@ import { toPosixPath } from "./paths.js";
 /**
  * The one place paths are canonicalized.
  *
- * Every path omen compares is first resolved through `realpath`. This matters because
+ * Every path nidan compares is first resolved through `realpath`. This matters because
  * Git reports the repository root with symlinks already resolved — `/var` is a link to
  * `/private/var` on macOS, and every temporary directory lives under it. A path that
  * skips this step compares unequal to one that did not, and the failure is silent: a
@@ -21,7 +21,7 @@ import { toPosixPath } from "./paths.js";
 export interface ProjectLocation {
   /** Canonical absolute POSIX path of the repository root. */
   readonly repoRoot: string;
-  /** Canonical absolute POSIX path of the directory omen was pointed at. */
+  /** Canonical absolute POSIX path of the directory nidan was pointed at. */
   readonly projectDirectory: string;
   /** Canonical absolute POSIX path of an explicit config, when one was given. */
   readonly configPath?: string;

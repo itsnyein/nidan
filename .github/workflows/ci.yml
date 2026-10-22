@@ -63,7 +63,7 @@ jobs:
         # usable: one legitimate multi-minute outlier inside this run would hide every
         # other breach behind it.
         env:
-          OMEN_EXCLUDE_RANDOMIZED: "1"
+          NIDAN_EXCLUDE_RANDOMIZED: "1"
         run: pnpm test
       - run: pnpm build
       - name: Smoke-run the built CLI
@@ -101,7 +101,7 @@ jobs:
         # guard is unaffected by the split — it lives in this file, which only this job
         # runs.
         env:
-          OMEN_RANDOMIZED: "1"
+          NIDAN_RANDOMIZED: "1"
         run: pnpm test:randomized
 
   pr-title:

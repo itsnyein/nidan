@@ -32,7 +32,7 @@ async function buildRepo(files: {
   base: Record<string, string>;
   head: Record<string, string>;
 }): Promise<FixtureRepo> {
-  const caseDir = await mkdtemp(join(tmpdir(), "omen-harden-"));
+  const caseDir = await mkdtemp(join(tmpdir(), "nidan-harden-"));
   cleanups.push(() => rm(caseDir, { recursive: true, force: true }));
   for (const [snapshot, entries] of Object.entries(files)) {
     for (const [path, contents] of Object.entries(entries)) {
@@ -123,10 +123,10 @@ describe("the environment cannot redirect or reshape a diff", () => {
       });
       const expected = await hunksOf(repo, "a.ts");
 
-      // Running omen from a Git hook, a rebase, or a wrapper script exports these. They
+      // Running nidan from a Git hook, a rebase, or a wrapper script exports these. They
       // point Git at a different repository entirely, and no flag overrides them — only
       // dropping them from the child environment does.
-      const decoy = await mkdtemp(join(tmpdir(), "omen-decoy-"));
+      const decoy = await mkdtemp(join(tmpdir(), "nidan-decoy-"));
       cleanups.push(() => rm(decoy, { recursive: true, force: true }));
       process.env["GIT_DIR"] = join(decoy, "not-a-repo");
       process.env["GIT_WORK_TREE"] = decoy;
@@ -179,11 +179,11 @@ describe("diff drivers cannot erase or fabricate changes", () => {
       const expected = await hunksOf(repo, "a.ts");
 
       // Points at a program that does not exist. If Git honoured it, the diff would
-      // either fail or return nothing; either way the hunks would not survive. omen must
+      // either fail or return nothing; either way the hunks would not survive. nidan must
       // never run a program the environment chose.
       process.env["GIT_EXTERNAL_DIFF"] = join(
         tmpdir(),
-        "omen-no-such-diff-driver",
+        "nidan-no-such-diff-driver",
       );
       process.env["GIT_DIFF_OPTS"] = "--unified=20";
       try {
@@ -229,7 +229,7 @@ describe("config cannot change the reported ranges", () => {
     async () => {
       // A real divergence, not a hypothetical: with the indent heuristic on, Git reports
       // this deletion as `-1,3 +0,0`; with it off, `-2,3 +1,0`. The heuristic shifts the
-      // boundary to a visually nicer place, which moves the lines omen attributes the
+      // boundary to a visually nicer place, which moves the lines nidan attributes the
       // change to. Whichever is prettier, it must not depend on the reader's config.
       const repo = await buildRepo({
         base: { "a.ts": "{\n  foo();\n}\n{\n  bar();\n}\n" },
@@ -299,7 +299,7 @@ describe("config cannot change the reported ranges", () => {
       await setRepoConfig(
         repo,
         "diff.external",
-        join(tmpdir(), "omen-no-such-external"),
+        join(tmpdir(), "nidan-no-such-external"),
       );
       await setRepoConfig(repo, "diff.noprefix", "true");
       await setRepoConfig(repo, "diff.indentHeuristic", "true");

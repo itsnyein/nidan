@@ -1,6 +1,6 @@
-# omen documentation
+# nidan documentation
 
-omen compares two Git refs in a JavaScript/TypeScript repository, finds the named callables that changed, and reports their direct usages with TypeScript compiler evidence.
+nidan compares two Git refs in a JavaScript/TypeScript repository, finds the named callables that changed, and reports their direct usages with TypeScript compiler evidence.
 
 The meaning of the output is **"potentially affected"**. It never guarantees behavioral impact.
 
@@ -9,11 +9,11 @@ The meaning of the output is **"potentially affected"**. It never guarantees beh
 | Document                                    | Contents                                                                                                  |
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | [Concepts](concepts.md)                     | The analysis model and its vocabulary: snapshots, callables, seeds, usages, gaps, and what a result means |
-| [Supported patterns](supported-patterns.md) | What omen resolves with compiler evidence, and how a change becomes a seed                                |
-| [Limitations](limitations.md)               | What omen does not resolve, what it reports instead, and the coverage statement                           |
+| [Supported patterns](supported-patterns.md) | What nidan resolves with compiler evidence, and how a change becomes a seed                               |
+| [Limitations](limitations.md)               | What nidan does not resolve, what it reports instead, and the coverage statement                          |
 | [CLI](cli.md)                               | Inputs, exit codes, and run status                                                                        |
 | [Output](output.md)                         | Report structure, usage kinds, gap kinds, ordering, and determinism                                       |
-| [Decision records](adr/README.md)           | Why omen is built the way it is, and what each choice costs                                               |
+| [Decision records](adr/README.md)           | Why nidan is built the way it is, and what each choice costs                                              |
 
 ## What is public contract
 

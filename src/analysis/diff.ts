@@ -1,7 +1,7 @@
 import { runDiff, runDiffNameStatus } from "../git/diff.js";
 import { GitError } from "../git/errors.js";
 
-/** Extensions omen analyzes. Anything else is counted and ignored. */
+/** Extensions nidan analyzes. Anything else is counted and ignored. */
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"] as const;
 
 export type FileChange = "added" | "deleted" | "modified";

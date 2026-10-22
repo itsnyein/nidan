@@ -179,7 +179,7 @@ class SnapshotHost implements FileSystemHost {
     }
     if (isWithin(repoRoot, normalized)) {
       // Repository source: snapshot only. There is deliberately no disk fallback, because
-      // one would let an uncommitted edit silently change what omen reports about a ref.
+      // one would let an uncommitted edit silently change what nidan reports about a ref.
       return "snapshot";
     }
     // Nothing outside the repository is readable. ts-morph serves its own bundled
@@ -379,7 +379,7 @@ class SnapshotHost implements FileSystemHost {
   }
 
   /**
-   * Every mutation is refused rather than ignored. omen must never modify the working
+   * Every mutation is refused rather than ignored. nidan must never modify the working
    * tree, and a silently dropped write would surface later as a confusing read.
    */
   private readOnly(action: string): SnapshotFileSystemError {

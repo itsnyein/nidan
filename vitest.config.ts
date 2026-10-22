@@ -11,7 +11,7 @@ import { configDefaults, defineConfig } from "vitest/config";
  * that differs between the POSIX and Windows runners, and the exclusion has to be the
  * same on both.
  */
-const EXCLUDE_RANDOMIZED = process.env["OMEN_EXCLUDE_RANDOMIZED"] === "1";
+const EXCLUDE_RANDOMIZED = process.env["NIDAN_EXCLUDE_RANDOMIZED"] === "1";
 
 /**
  * Matched by name, not listed file by file, so the exclusion here and the dedicated

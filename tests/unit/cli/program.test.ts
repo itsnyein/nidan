@@ -34,7 +34,7 @@ function parse(args: string[]): ParseResult {
   });
 
   try {
-    program.parse(["node", "omen", ...args]);
+    program.parse(["node", "nidan", ...args]);
   } catch (error) {
     const typed = error as { code?: string; message: string };
     return { output, ...(invocation && { invocation }), error: typed };

@@ -29,7 +29,7 @@ afterEach(async () => {
 
 /** Registers a temporary directory for removal after the current test. */
 async function tempDir(): Promise<string> {
-  const path = await mkdtemp(join(tmpdir(), "omen-case-"));
+  const path = await mkdtemp(join(tmpdir(), "nidan-case-"));
   cleanups.push(() => rm(path, { recursive: true, force: true }));
   return path;
 }
@@ -263,8 +263,8 @@ describe("createFixtureRepo", () => {
       );
       const epochOf2000 = "946684800";
       expect(identity).toBe(
-        `omen fixtures|fixtures@omen.invalid|${epochOf2000}|` +
-          `omen fixtures|fixtures@omen.invalid|${epochOf2000}`,
+        `nidan fixtures|fixtures@nidan.invalid|${epochOf2000}|` +
+          `nidan fixtures|fixtures@nidan.invalid|${epochOf2000}`,
       );
     },
     TIMEOUT_MS,
@@ -366,7 +366,7 @@ describe("createFixtureRepo", () => {
       // Compared against the committed blob rather than `git status`: `a.ts` is the same
       // size in head and in the overlay, and Git's index trusts stat data, so on a
       // filesystem with coarse mtime resolution status can report the file as clean. That
-      // is a Git-index artifact and not something omen depends on — omen reads sources
+      // is a Git-index artifact and not something nidan depends on — nidan reads sources
       // from Git objects and never consults the work tree — but the disk content must
       // genuinely differ or the leak case proves nothing.
       const onDisk = await readFile(join(repo.path, "a.ts"), "utf8");

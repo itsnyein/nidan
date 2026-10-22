@@ -4,7 +4,7 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    // Fixture source is data, not code. Cases deliberately contain patterns omen must
+    // Fixture source is data, not code. Cases deliberately contain patterns nidan must
     // handle and lint would reject — an `any` receiver, an unused export, a dynamic
     // require — and they are frozen, so they could not be fixed in place anyway.
     ignores: [

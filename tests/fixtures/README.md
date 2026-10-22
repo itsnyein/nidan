@@ -31,12 +31,12 @@ works everywhere — real symlinks on POSIX, junctions on Windows, which need no
 privileges and resolve through `realpath` the same way.
 
 The harness in `tests/helpers/fixture-repo.ts` builds a temporary Git repository with two
-commits from `base/` and `head/`, reachable as the refs `base` and `head`. Tests run omen
+commits from `base/` and `head/`, reachable as the refs `base` and `head`. Tests run nidan
 against that repository and compare the result with `expected.json`.
 
 ## Rules
 
-**Golden expectations are written by humans.** They are never generated from omen's
+**Golden expectations are written by humans.** They are never generated from nidan's
 output. A generated expectation asserts that the tool does what it does, which is not a
 test. Each value in an `expected.json` was derived from the behavior documentation and
 checked by hand against the fixture's source.

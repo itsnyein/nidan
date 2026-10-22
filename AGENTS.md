@@ -2,13 +2,13 @@
 
 ## Project
 
-omen is a CLI that compares two Git refs in a JavaScript/TypeScript repository,
+nidan is a CLI that compares two Git refs in a JavaScript/TypeScript repository,
 finds changed functions, and reports their direct usages with compiler evidence.
 Correctness and explicit limitations matter more than feature count.
 
 ## Sources of truth
 
-- Behavior — what omen analyzes and outputs:
+- Behavior — what nidan analyzes and outputs:
   `planning/spec/phase-1-technical-specification.md`
 - Project and process — stack, structure, workflow, governance, testing, docs,
   release: `planning/decisions.md`

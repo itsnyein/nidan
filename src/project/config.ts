@@ -7,7 +7,7 @@ import type { SnapshotFileSystem } from "./snapshot-file-system.js";
 export type AnalysisMode = "tsconfig" | "jsconfig" | "inferred";
 
 /**
- * `invalid-config-path` means the user named a config omen cannot use, which is their
+ * `invalid-config-path` means the user named a config nidan cannot use, which is their
  * input to fix. `unreadable-config` means the committed config itself is broken, which
  * is a failed run.
  */
@@ -144,7 +144,7 @@ function parseConfig(
     mode,
     configPath: absolute.slice(root.length + 1),
     // The user's options are kept as written. `allowJs` is the single documented
-    // exception, because omen analyzes .js and .jsx whether or not the project compiles
+    // exception, because nidan analyzes .js and .jsx whether or not the project compiles
     // them, and without it those files would silently leave the program.
     compilerOptions: { ...result.options, allowJs: true },
     fileNames: result.fileNames.map(toPosixPath).sort(),

@@ -5,13 +5,13 @@
 
 ## Context
 
-Loading two fully type-checked programs is the expensive part of omen by a wide margin,
+Loading two fully type-checked programs is the expensive part of nidan by a wide margin,
 and the obvious optimizations are available from the start: load the base snapshot lazily,
 skip type information where it seems unnecessary, cache aggressively between runs, or
 build a reference index instead of querying per seed.
 
 Every one of those trades evidence for speed. A lazily loaded program answers differently
-from a fully loaded one at the edges — and the edges are where omen's guarantee lives.
+from a fully loaded one at the edges — and the edges are where nidan's guarantee lives.
 
 The pull to optimize early is strongest before any measurement exists, which is exactly
 when there is no way to tell whether the cost is real.

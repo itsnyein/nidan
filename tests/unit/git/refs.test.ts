@@ -31,7 +31,7 @@ async function repoWith(
   base: Record<string, string>,
   head: Record<string, string>,
 ): Promise<FixtureRepo> {
-  const caseDir = await mkdtemp(join(tmpdir(), "omen-case-"));
+  const caseDir = await mkdtemp(join(tmpdir(), "nidan-case-"));
   cleanups.push(() => rm(caseDir, { recursive: true, force: true }));
   for (const [snapshot, files] of [
     ["base", base],
@@ -64,7 +64,7 @@ describe("findRepositoryRoot", () => {
   it(
     "reports a directory that is not a repository",
     async () => {
-      const outside = await mkdtemp(join(tmpdir(), "omen-outside-"));
+      const outside = await mkdtemp(join(tmpdir(), "nidan-outside-"));
       cleanups.push(() => rm(outside, { recursive: true, force: true }));
 
       await expect(findRepositoryRoot(outside)).rejects.toMatchObject({

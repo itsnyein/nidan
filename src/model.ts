@@ -11,7 +11,7 @@ import type { RunReason, RunStatus, RunWarning } from "./project/run.js";
 export const SCHEMA_VERSION = 0;
 
 /**
- * Categories omen does not analyze, by design. Included in every report so a reader
+ * Categories nidan does not analyze, by design. Included in every report so a reader
  * always has the bounds of the result in front of them, rather than having to remember
  * them.
  */

@@ -2,13 +2,13 @@
 
 > **Status: specified, not yet implemented.** See [Documentation status](README.md#documentation-status).
 
-Every limitation here states what omen does instead, because the [core guarantee](concepts.md#core-guarantee) requires that nothing is silently dropped. Where a limitation produces a gap, the gap kind is named; the gap kinds themselves are described in [Output](output.md#gap-kinds).
+Every limitation here states what nidan does instead, because the [core guarantee](concepts.md#core-guarantee) requires that nothing is silently dropped. Where a limitation produces a gap, the gap kind is named; the gap kinds themselves are described in [Output](output.md#gap-kinds).
 
 ## Analysis limitations
 
 ### Interface and override dispatch is detected, not resolved
 
-When a changed method implements an interface member or overrides a base-class method, omen cannot tell which concrete implementation a given call site reaches.
+When a changed method implements an interface member or overrides a base-class method, nidan cannot tell which concrete implementation a given call site reaches.
 
 It reports an `interface-or-override-dispatch` gap rather than claiming or omitting an edge.
 
@@ -16,17 +16,17 @@ It reports an `interface-or-override-dispatch` gap rather than claiming or omitt
 
 A change to a type or interface that does not touch a function body does not produce a seed, because no callable changed.
 
-It appears as an `unmapped-change` gap. The impact of type-only changes is outside what omen analyzes.
+It appears as an `unmapped-change` gap. The impact of type-only changes is outside what nidan analyzes.
 
 ### A moved or renamed file looks like a delete plus an add
 
 File paths are part of the [identity key](supported-patterns.md#matching-base-against-head). Moving or renaming a file therefore breaks the match: every callable in it is reported as deleted at the old path and added at the new one, even when the body is unchanged.
 
-omen does not perform rename or move detection.
+nidan does not perform rename or move detection.
 
 ### Value flow is not followed
 
-`value-reference` records only the immediate use of a callable as a value. omen does not follow where that value travels afterwards.
+`value-reference` records only the immediate use of a callable as a value. nidan does not follow where that value travels afterwards.
 
 Specifically, `.call()`, `.apply()`, `.bind()`, unions of callable types, and data-flow tracing are not followed.
 
@@ -36,7 +36,7 @@ Specifically, `.call()`, `.apply()`, `.bind()`, unions of callable types, and da
 
 ### Untyped receivers are not resolved
 
-A member call on a receiver typed `any`, or one whose type cannot be resolved, cannot be attributed to a specific symbol. When the called member matches a seed name, omen reports an `untyped-member-call` gap.
+A member call on a receiver typed `any`, or one whose type cannot be resolved, cannot be attributed to a specific symbol. When the called member matches a seed name, nidan reports an `untyped-member-call` gap.
 
 ### Unsupported callable forms
 
@@ -44,7 +44,7 @@ Anonymous callbacks, getters and setters, factory-returned functions, dynamicall
 
 ### Duplicate identity keys stop matching
 
-If the same structural key appears twice within one snapshot, omen does not guess which declaration corresponds to which. It emits an `ambiguous-identity` gap.
+If the same structural key appears twice within one snapshot, nidan does not guess which declaration corresponds to which. It emits an `ambiguous-identity` gap.
 
 ## Repository and environment limitations
 
@@ -66,7 +66,7 @@ npm, pnpm, and yarn `node_modules` layouts are supported. PnP is not.
 
 Dependencies resolve from the current working tree's `node_modules`, not from either snapshot. Analysis of an old ref therefore uses today's installed packages.
 
-If `node_modules` is missing **and** a file omen analyzed imports a package that does not
+If `node_modules` is missing **and** a file nidan analyzed imports a package that does not
 resolve, the run is `degraded` with the reason `dependencies-not-installed`.
 
 Both halves matter. A project that imports nothing from `node_modules` resolves perfectly
@@ -80,7 +80,7 @@ If `base` and `head` differ in their `package.json` dependency fields or their l
 
 ### Import paths must match the committed file's case
 
-omen compares paths case-sensitively on every platform. An import whose case differs from
+nidan compares paths case-sensitively on every platform. An import whose case differs from
 the path recorded in Git does not resolve, and is reported as an `unresolved-module` gap.
 
 ```ts
@@ -93,7 +93,7 @@ macOS and Windows — that import works, so a repository can build locally and s
 reported as having an unresolved module here. The same code genuinely fails on a
 case-sensitive filesystem, which is what most Linux CI runners and container images use.
 
-Matching the host filesystem instead would make omen's output depend on the machine it ran
+Matching the host filesystem instead would make nidan's output depend on the machine it ran
 on, which the [determinism rules](output.md#determinism) forbid. Reporting the stricter
 answer everywhere also surfaces a real portability bug rather than hiding it.
 
@@ -103,9 +103,9 @@ Module resolution is confined to the repository and its `node_modules`. A path t
 
 ### Untrusted repositories are out of scope
 
-The security model for analyzing untrusted repositories is not part of Phase 1. omen is intended to run as a local CLI against your own repository.
+The security model for analyzing untrusted repositories is not part of Phase 1. nidan is intended to run as a local CLI against your own repository.
 
-omen never installs dependencies, never accesses the network, never runs lifecycle scripts, and never executes repository code — but the TypeScript compiler is not a sandbox, and that threat model is deferred.
+nidan never installs dependencies, never accesses the network, never runs lifecycle scripts, and never executes repository code — but the TypeScript compiler is not a sandbox, and that threat model is deferred.
 
 ## Not in Phase 1
 
@@ -134,4 +134,4 @@ Every report includes this statement. These categories are **not analyzed by des
 - **Impact of type-only changes**
 - **Historical dependency accuracy** — dependencies come from the working tree, not from the compared refs
 
-Because of these categories, omen never claims to detect all impact. A result means [potentially affected](concepts.md#what-a-result-means), and an empty result is not a safety signal.
+Because of these categories, nidan never claims to detect all impact. A result means [potentially affected](concepts.md#what-a-result-means), and an empty result is not a safety signal.

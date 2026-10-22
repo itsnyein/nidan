@@ -21,7 +21,7 @@ import { runGit, type GitResult } from "./exec.js";
  * | `--diff-algorithm=myers` | `diff.algorithm`; algorithms disagree about which lines changed |
  * | `--no-indent-heuristic` | `diff.indentHeuristic`, which shifts hunk boundaries |
  *
- * The `-diff` attribute and `GIT_EXTERNAL_DIFF` are the dangerous two: both make omen
+ * The `-diff` attribute and `GIT_EXTERNAL_DIFF` are the dangerous two: both make nidan
  * report a changed file with an empty hunk list, which reads as "nothing changed here"
  * rather than as a failure. That is a silent drop, which the core guarantee forbids.
  */
@@ -40,7 +40,7 @@ const PINNED_DIFF_FLAGS: readonly string[] = [
 /**
  * Runs `git diff` with every output-affecting setting pinned.
  *
- * This is the only way omen asks Git for a diff. `runGit` additionally drops the `GIT_*`
+ * This is the only way nidan asks Git for a diff. `runGit` additionally drops the `GIT_*`
  * environment, which is where `GIT_EXTERNAL_DIFF` and `GIT_DIFF_OPTS` would otherwise
  * arrive.
  */

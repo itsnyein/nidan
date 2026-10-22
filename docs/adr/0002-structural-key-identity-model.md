@@ -8,7 +8,7 @@
 Classifying a callable as added, deleted, or modified means matching declarations across
 two snapshots. The two snapshots are separate compiler programs, so a symbol from `base`
 and a symbol from `head` are different objects with no shared identity — they must be
-matched by a key omen computes.
+matched by a key nidan computes.
 
 The key decides correctness of the whole diff stage. Too strict, and an ordinary edit
 looks like a delete plus an add, producing noise and losing the usage report that matters.
@@ -26,7 +26,7 @@ relativePosixPath :: containerChain :: declarationKind :: name [:: static]
 `containerChain` holds the enclosing classes and callables, which distinguishes nested
 functions sharing a name. The signature is deliberately **not** part of the key.
 
-When the same key appears twice within one snapshot, omen does not match. It emits an
+When the same key appears twice within one snapshot, nidan does not match. It emits an
 `ambiguous-identity` gap, per [ADR-0004](0004-gaps-not-edges.md).
 
 ## Consequences
@@ -56,5 +56,5 @@ that cannot be explained from compiler evidence. A wrong match is worse than a d
 limitation, because it is silent.
 
 **The compiler's own symbol identity.** The natural choice within one program, and it is
-what omen uses _inside_ a snapshot. Rejected for cross-snapshot matching because the two
+what nidan uses _inside_ a snapshot. Rejected for cross-snapshot matching because the two
 programs share nothing — there is no object to compare.

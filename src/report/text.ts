@@ -10,7 +10,7 @@ import type { Report } from "../model.js";
 export function renderText(report: Report): string {
   const { run } = report;
   const lines: string[] = [
-    `omen  ${run.refs.base} -> ${run.refs.head}`,
+    `nidan  ${run.refs.base} -> ${run.refs.head}`,
     `compared ${short(run.refs.mergeBaseSha)}..${short(run.refs.headSha)} (merge base)`,
     `run: ${run.status}  config: ${run.analysisMode}  typescript: ${run.analysisTypeScriptVersion}`,
   ];
