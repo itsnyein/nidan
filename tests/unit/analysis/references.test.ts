@@ -89,8 +89,17 @@ async function analyze(repoPath: string): Promise<Outcome> {
   return { result, seeds, occurrences, explain };
 }
 
-/** The usages a fixture freezes, as comparable lines. `relation` is not asserted here. */
-function expectedUsages(name: string): string[] {
+/**
+ * The usages a fixture freezes, as comparable lines, or `undefined` when its record does
+ * not mention usages at all.
+ *
+ * The distinction is the record contract, not a convenience: `"usages": []` asserts that
+ * there are none, and an absent key asserts nothing. Treating the two the same would
+ * either drop the five fixtures that freeze an empty list — the ones that catch
+ * *over*-reporting — or demand an expectation from eleven records that never made one.
+ * `relation` is not asserted here; classification is a later change.
+ */
+function expectedUsages(name: string): string[] | undefined {
   const raw = readFileSync(
     join("tests", "fixtures", name, "expected.json"),
     "utf8",
@@ -109,7 +118,10 @@ function expectedUsages(name: string): string[] {
       }>;
     };
   };
-  return (parsed.expect.seeds ?? [])
+  const seeds = parsed.expect.seeds ?? [];
+  if (!seeds.some((seed) => seed.usages !== undefined)) return undefined;
+
+  return seeds
     .flatMap((seed) =>
       (seed.usages ?? []).map(
         (usage) =>
@@ -128,27 +140,32 @@ function actualUsages(result: ReferenceResult): string[] {
     .sort();
 }
 
-/**
- * Every fixture whose record declares at least one usage, derived from the directories.
- *
- * Enumerated rather than listed. A hand-written list is a second place to forget, and the
- * gap-record enumeration already showed what that costs: a fixture nothing loaded sat in
- * the tree verifying nothing for a whole milestone.
- */
-function fixturesWithUsages(): string[] {
-  return allFixtures().filter((name) => expectedUsages(name).length > 0);
-}
-
 describe("usages against the frozen fixtures", () => {
-  const names = fixturesWithUsages();
+  // **Every** fixture, not only the ones whose records declare a usage. Keying on record
+  // content is the defect this repository has already paid for twice: a fixture that
+  // freezes `"usages": []` is the one that catches *over*-reporting, and filtering on
+  // "has at least one usage" removed exactly those from the check. A record that empties
+  // itself would also have deleted its own assertion.
+  const names = allFixtures();
+  const declaring = names.filter((name) => expectedUsages(name) !== undefined);
 
-  it("finds fixtures to check", () => {
-    // Guards the enumeration itself. If the predicate ever stopped matching, every test
-    // below would vanish and the file would still report success.
-    expect(names.length).toBeGreaterThan(20);
+  it("includes the fixtures that freeze an empty usage list", () => {
+    // The property the enumeration exists for, asserted rather than assumed. A fixture
+    // recording `"usages": []` is the one that catches over-reporting; selecting on
+    // "has at least one usage" silently dropped every one of them.
+    expect(
+      declaring.filter((name) => expectedUsages(name)?.length === 0),
+    ).toEqual([
+      "identity-default-exports",
+      "identity-nested-static-collision",
+      "identity-static-vs-instance",
+      "seed-added-deleted",
+      "seed-comment-change",
+    ]);
+    expect(declaring.length).toBeGreaterThan(20);
   });
 
-  it.each(names)(
+  it.each(declaring)(
     "%s produces exactly the usages it freezes",
     async (name) => {
       const outcome = await analyze(join("tests", "fixtures", name));
@@ -169,9 +186,11 @@ describe("usages against the frozen fixtures", () => {
             `${occurrence.filePath}:${String(occurrence.line)} ${occurrence.explanation.kind === "unexplained" ? occurrence.explanation.why : ""}`,
         ),
       ).toEqual([]);
-      // The check has to have had something to do. A fixture contributing zero
-      // occurrences would pass the assertion above while checking nothing.
-      expect(outcome.occurrences.length).toBeGreaterThan(0);
+      // The check has to have had something to do — but only where there is a seed to
+      // scan for. A fixture with no seeds contributes no occurrences legitimately.
+      if (outcome.seeds.seeds.length > 0) {
+        expect(outcome.occurrences.length).toBeGreaterThan(0);
+      }
     },
     TIMEOUT_MS,
   );
@@ -301,6 +320,79 @@ describe("a subclass with no explicit constructor", () => {
           .filter((occurrence) => occurrence.explanation.kind === "undecided")
           .map((occurrence) => occurrence.filePath),
       ).toEqual(["src/retry.ts"]);
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "attributes a nested class's super() to that class, not to the enclosing one",
+    async () => {
+      // Both classes extend `Client`, so the reference search returns both heritage
+      // clauses and each collects its own `super()`. A scan that walked the whole
+      // subtree collected the inner one twice — once correctly, once named for the
+      // outer constructor, which reads as a second construction site that does not
+      // exist.
+      const base = {
+        "src/client.ts":
+          "export class Client {\n  constructor(readonly url: string) {}\n}\n",
+        "src/retry.ts":
+          'import { Client } from "./client.js";\n\nexport class RetryingClient extends Client {\n  constructor(url: string) {\n    super(url);\n    const Inner = class extends Client {\n      constructor() {\n        super("inner");\n      }\n    };\n    void Inner;\n  }\n}\n',
+      };
+      const outcome = await analyze(
+        await throwawayCase({
+          base,
+          head: {
+            ...base,
+            "src/client.ts":
+              'export class Client {\n  constructor(readonly url: string) {\n    if (url === "") throw new Error("url is required");\n  }\n}\n',
+          },
+        }),
+      );
+
+      expect(
+        outcome.result.usages.map(
+          (usage) => `${usage.filePath}:${String(usage.line)}`,
+        ),
+      ).toEqual(["src/retry.ts:5", "src/retry.ts:8"]);
+      // Each from its own constructor. The duplicate the subtree walk produced carried
+      // the outer constructor's key for the inner call, so comparing the sites alone
+      // would not have shown it.
+      expect(
+        new Set(outcome.result.usages.map((usage) => usage.from)).size,
+      ).toBe(2);
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "treats implements as a type-only reference, not as an unruled heritage clause",
+    async () => {
+      // `implements Client` is a heritage clause too, and routing every heritage clause
+      // to the constructor rule parked it in the bucket reserved for the one shape
+      // nobody has ruled on — while §9 already settles it as a type position.
+      const base = {
+        "src/client.ts":
+          "export class Client {\n  constructor(readonly url: string) {}\n}\n",
+        "src/fake.ts":
+          'import { Client } from "./client.js";\n\nexport class FakeClient implements Client {\n  readonly url = "";\n}\n',
+      };
+      const outcome = await analyze(
+        await throwawayCase({
+          base,
+          head: {
+            ...base,
+            "src/client.ts":
+              'export class Client {\n  constructor(readonly url: string) {\n    if (url === "") throw new Error("url is required");\n  }\n}\n',
+          },
+        }),
+      );
+
+      expect(outcome.result.undecided).toEqual([]);
+      expect(
+        outcome.result.filtered
+          .filter((reference) => reference.filePath === "src/fake.ts")
+          .map((reference) => `${reference.reason}:${String(reference.line)}`),
+      ).toEqual(["import-specifier:1", "type-only:3"]);
     },
     TIMEOUT_MS,
   );
@@ -439,6 +531,31 @@ describe("the differential check can fail", () => {
       expect(unexplained[0]?.explanation).toMatchObject({
         why: "resolves to the seed but discovery neither reported nor filtered it",
       });
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "turns a dropped constructor usage into an unexplained occurrence",
+    async () => {
+      // The same mutation on the constructor shape. Without it, the method case above
+      // passes while constructor occurrences are resolved against the constructor's own
+      // range — which `new Client()` lies outside — so every constructor reference falls
+      // into `different-symbol` and "zero unexplained" holds while checking nothing.
+      const outcome = await analyze(
+        join("tests", "fixtures", "usage-constructor-cross-file"),
+      );
+      expect(unexplainedOf(outcome.occurrences)).toEqual([]);
+
+      const unexplained = unexplainedOf(
+        outcome.explain({ ...outcome.result, usages: [] }),
+      );
+
+      expect(
+        unexplained.map(
+          (occurrence) => `${occurrence.filePath}:${String(occurrence.line)}`,
+        ),
+      ).toEqual(["src/use.ts:4"]);
     },
     TIMEOUT_MS,
   );

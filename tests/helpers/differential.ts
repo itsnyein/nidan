@@ -185,7 +185,9 @@ function explain(
   // declaration** is a reference to the seed; reaching here means discovery neither
   // reported nor filtered it, which is the silent miss this harness exists to catch.
   if (
-    declarations.some((declaration) => isInsideCallable(declaration, callable))
+    declarations.some((declaration) =>
+      isInsideTarget(declaration, callable, input.repoRoot),
+    )
   ) {
     return {
       kind: "unexplained",
@@ -223,13 +225,47 @@ function at(filePath: string, pos: number) {
     site.filePath === filePath && site.pos === pos;
 }
 
-function isInsideCallable(declaration: Node, callable: Callable): boolean {
-  const path = declaration.getSourceFile().getFilePath().replace(/\\/gu, "/");
-  if (!path.endsWith(`/${callable.filePath}`)) return false;
+/**
+ * Whether a resolved declaration is the thing the occurrence was searched under.
+ *
+ * For a constructor that is the **class**, not the constructor's own range. The
+ * occurrences are of the class name, and `new Client()` resolves to the class
+ * declaration — which lies outside the constructor — so testing the constructor's range
+ * put every constructor reference into `different-symbol`. A dropped `new` usage was then
+ * explained away, and "zero unexplained" held vacuously for both constructor fixtures:
+ * the same hollowness this harness was built to detect, surviving in the one shape its
+ * mutation test did not cover.
+ */
+function isInsideTarget(
+  declaration: Node,
+  callable: Callable,
+  repoRoot: string,
+): boolean {
+  const path = relativePathOf(declaration.getSourceFile(), repoRoot);
+  if (path !== callable.filePath) return false;
+
   const start = declaration.getStart();
-  return callable.ranges.some(
-    (range) => start >= range.startPos && start < range.endPos,
+  const spans =
+    callable.kind === "constructor"
+      ? classSpansOf(callable)
+      : callable.ranges.map((range) => ({
+          start: range.startPos,
+          end: range.endPos,
+        }));
+
+  return spans.some((span) => start >= span.start && start < span.end);
+}
+
+function classSpansOf(
+  callable: Callable,
+): Array<{ start: number; end: number }> {
+  const owner = callable.declaration.getFirstAncestor(
+    (ancestor) =>
+      Node.isClassDeclaration(ancestor) || Node.isClassExpression(ancestor),
   );
+  return owner === undefined
+    ? []
+    : [{ start: owner.getStart(), end: owner.getEnd() }];
 }
 
 function coveredByGap(

@@ -1,4 +1,9 @@
-import { Node, type ReferencedSymbol, type SourceFile } from "ts-morph";
+import {
+  Node,
+  SyntaxKind,
+  type ReferencedSymbol,
+  type SourceFile,
+} from "ts-morph";
 
 import type { Callable, CallableIndex } from "./identity.js";
 import type { Seed, Snapshot } from "./seeds.js";
@@ -143,7 +148,15 @@ function collectForSeed(
       const reason = filterReasonFor(node, entry.isDefinition() === true);
 
       if (reason === "heritage-clause") {
-        classifyHeritageClause(node, seed, site, snapshot, repoRoot, buckets);
+        classifyHeritageClause(
+          node,
+          seed,
+          site,
+          snapshot,
+          repoRoot,
+          resolution,
+          buckets,
+        );
         continue;
       }
       if (reason !== undefined) {
@@ -208,7 +221,13 @@ function filterReasonFor(
   ) {
     return "import-specifier";
   }
-  if (Node.isExportSpecifier(parent)) return "export-specifier";
+  // `export default foo` is an ExportAssignment, not an ExportSpecifier. Missing it
+  // reported the alias as a call site, against the approved `identity-default-exports`
+  // record, which freezes no usages for it: §7.2 calls the default export an alias, and
+  // using a callable as a value belongs to `valueReferences`, not here.
+  if (Node.isExportSpecifier(parent) || Node.isExportAssignment(parent)) {
+    return "export-specifier";
+  }
 
   // A related symbol's own declaration — an interface member the seed implements, or a
   // base method it overrides — is a declaration site, and `isDefinition` is false for it
@@ -240,11 +259,21 @@ function isDeclarationNameNode(node: Node, parent: Node): boolean {
   );
 }
 
+/**
+ * A class's `extends` clause, and nothing else.
+ *
+ * `implements` is a type position that §9 already settles, and an interface's `extends`
+ * is one too. Matching any heritage clause routed both into the bucket reserved for the
+ * one shape nobody has ruled on, which would have read as "undecided" for references
+ * whose answer is written down.
+ */
 function isHeritageReference(parent: Node): boolean {
-  return (
-    Node.isExpressionWithTypeArguments(parent) &&
-    Node.isHeritageClause(parent.getParent())
-  );
+  if (!Node.isExpressionWithTypeArguments(parent)) return false;
+  const clause = parent.getParent();
+  if (!Node.isHeritageClause(clause)) return false;
+  if (clause.getToken() !== SyntaxKind.ExtendsKeyword) return false;
+  const owner = clause.getParent();
+  return Node.isClassDeclaration(owner) || Node.isClassExpression(owner);
 }
 
 /**
@@ -280,6 +309,7 @@ function classifyHeritageClause(
   site: ReferenceSite,
   snapshot: SnapshotReferences,
   repoRoot: string,
+  resolution: UsageResolution,
   buckets: Buckets,
 ): void {
   const subclass = node.getFirstAncestor(
@@ -289,7 +319,13 @@ function classifyHeritageClause(
   const constructor =
     subclass !== undefined &&
     (Node.isClassDeclaration(subclass) || Node.isClassExpression(subclass))
-      ? subclass.getConstructors()[0]
+      ? // The implementation, not an overload signature: an overloaded constructor set
+        // puts the signatures first, and a signature has no body to scan, so the
+        // heritage clause would be filtered while the `super()` was never found.
+        (subclass
+          .getConstructors()
+          .find((candidate) => candidate.getBody() !== undefined) ??
+        subclass.getConstructors()[0])
       : undefined;
 
   if (constructor === undefined) {
@@ -313,14 +349,27 @@ function classifyHeritageClause(
   for (const call of constructor.getDescendants()) {
     if (!Node.isCallExpression(call)) continue;
     if (!Node.isSuperExpression(call.getExpression())) continue;
+    // `super` inside a class declared within this constructor belongs to that class, not
+    // to this one. Attributing it here would name the wrong parent.
+    if (ownerConstructorOf(call) !== constructor) continue;
     const superSite = siteOf(call.getExpression(), repoRoot);
     buckets.usages.push({
       seedKey: seed.key,
       from: fromOf(call, snapshot, superSite.filePath),
-      resolution: { status: "exact" },
+      resolution,
       ...superSite,
     });
   }
+}
+
+/** The constructor a `super()` call belongs to, stopping at the first class boundary. */
+function ownerConstructorOf(call: Node): Node | undefined {
+  return call.getFirstAncestor(
+    (ancestor) =>
+      Node.isConstructorDeclaration(ancestor) ||
+      Node.isClassDeclaration(ancestor) ||
+      Node.isClassExpression(ancestor),
+  );
 }
 
 /** The enclosing supported callable, or the module node (§9). */
@@ -412,7 +461,7 @@ function resolutionOf(
   repoRoot: string,
 ): UsageResolution {
   const declarations = resolvedDeclarationsOf(group);
-  if (declarations.some((node) => isWithinTarget(node, target))) {
+  if (declarations.some((node) => isWithinTarget(node, target, repoRoot))) {
     return { status: "exact" };
   }
 
@@ -449,18 +498,17 @@ function resolvedDeclarationsOf(group: ReferencedSymbol): Node[] {
   return declarations;
 }
 
-function isWithinTarget(node: Node, target: TargetSpans): boolean {
-  if (!endsWith(node, target.filePath)) return false;
+function isWithinTarget(
+  node: Node,
+  target: TargetSpans,
+  repoRoot: string,
+): boolean {
+  // The repository-relative path, not a suffix match: a snapshot holding both
+  // `src/greet.ts` and `vendor/src/greet.ts` satisfies a suffix test for either, leaving
+  // only the span check between that and a wrong `exact`.
+  if (siteOf(node, repoRoot).filePath !== target.filePath) return false;
   const start = node.getStart();
   return target.spans.some((span) => start >= span.start && start < span.end);
-}
-
-function endsWith(node: Node, filePath: string): boolean {
-  return node
-    .getSourceFile()
-    .getFilePath()
-    .replace(/\\/gu, "/")
-    .endsWith(`/${filePath}`);
 }
 
 function siteOf(node: Node, repoRoot: string): ReferenceSite {
