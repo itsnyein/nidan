@@ -428,10 +428,11 @@ function relationOf(node: Node): Relation {
  * access rather than the call; without this step every member call would classify as a
  * value reference. `<UI.Card />` is the same shape with a JSX tag.
  *
- * `obj["method"]()` is the same access written differently (§15b): the reference arrives
- * as the **string literal** key, and the compiler resolves it to the same member, so it
- * walks the same way and classifies the same. A non-literal key addresses no particular
- * member, the compiler never returns it as a reference, and so nothing reaches here.
+ * `obj["method"]()` and ``obj[`method`]()`` are the same access written differently
+ * (§15b): the reference arrives as the **literal key**, and the compiler resolves it to
+ * the same member, so it walks the same way and classifies the same. A non-literal key
+ * addresses no particular member, the compiler never returns it as a reference, and so
+ * nothing reaches here.
  */
 function outermostAccess(node: Node): Node {
   let current = node;
@@ -443,16 +444,27 @@ function outermostAccess(node: Node): Node {
     const isNamedPart =
       Node.isPropertyAccessExpression(parent) &&
       parent.getNameNode() === current;
-    // Only a string literal. A computed key that is anything else does not name a member
-    // at compile time, so treating it as one would invent an access the compiler never
-    // resolved.
-    const isLiteralKey =
+    const isKey =
       Node.isElementAccessExpression(parent) &&
       parent.getArgumentExpression() === current &&
-      Node.isStringLiteral(current);
-    if (!isNamedPart && !isLiteralKey) return current;
+      isLiteralKey(current);
+    if (!isNamedPart && !isKey) return current;
     current = parent;
   }
+}
+
+/**
+ * A key that names a member at compile time.
+ *
+ * Both spellings of a literal, and nothing else. A template literal **with**
+ * substitutions is a different node kind, so it is excluded by construction rather than
+ * by a check that could be forgotten — and anything else computed addresses no particular
+ * member, which would make treating it as one an access the compiler never resolved.
+ */
+function isLiteralKey(node: Node): boolean {
+  return (
+    Node.isStringLiteral(node) || Node.isNoSubstitutionTemplateLiteral(node)
+  );
 }
 
 /** The enclosing supported callable, or the module node (§9). */

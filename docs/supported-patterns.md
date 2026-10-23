@@ -50,7 +50,7 @@ items.map(formatRow); // value-reference on formatRow
 formatRow(item); // invoke
 ```
 
-A member call written with a **string-literal** key is the same usage as the dotted form: `obj["method"]()` and `obj.method()` name the same member and both report `invoke`. A key that is not a string literal names no member at compile time and is not resolved — see [computed member access](limitations.md#computed-member-access-is-not-resolved).
+A member call written with a **literal** key is the same usage as the dotted form: `obj["method"]()`, ``obj[`method`]()``, and `obj.method()` all name the same member and all report `invoke`. A key that is not a literal — including a template literal with substitutions — names no member at compile time and is not resolved; see [computed member access](limitations.md#computed-member-access-is-not-resolved).
 
 ## Module patterns
 
