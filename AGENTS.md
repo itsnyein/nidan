@@ -118,12 +118,24 @@ Review agent:
 
 All agents:
 
-- Git, allowed: read-only commands (`status`, `diff`, `log`, `show`), creating a
-  working branch, committing, pushing that branch, and opening a pull request
-  for the current task.
-- Git, forbidden: merging, force-pushing, amending pushed commits, tagging,
-  deleting branches, rewriting history, bypassing branch protection or required
-  checks, changing Git config, and changing commit authorship.
+- Git, allowed: read-only commands (`status`, `diff`, `log`, `show`), `checkout`,
+  `pull --ff-only` on `main`, creating a working branch, committing, pushing that
+  branch, rebasing a branch **that has not been pushed**, and opening a pull
+  request for the current task.
+- Git, forbidden: merging, force-pushing, rebasing or amending a commit that has
+  been pushed, tagging, deleting branches, rewriting published history, bypassing
+  branch protection or required checks, changing Git config or credential
+  helpers, `gh auth setup-git`, and changing commit authorship.
+- GitHub account, allowed: `gh auth switch -u Its-Nyein` when an operation on
+  `itsnyein/nidan` needs it, verified with `gh auth status`, and pushing through
+  the per-command credential helper. Do this without asking. The active account
+  resets between shells, so expect to repeat it.
+
+  Rebasing an unpushed branch is allowed because nothing downstream can depend on
+  it yet. Once a branch is pushed its commits are published, and the forbidden
+  list governs instead — the test is whether the commit has left this machine,
+  not whether anyone has reviewed it.
+
 - Work on a task branch, never directly on `main`. One task, one branch, one
   pull request. Name the branch for the change, not for the task: see
   "Planning labels stay in `planning/`". Maintainer-directed governance and configuration changes are the

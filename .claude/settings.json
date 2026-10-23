@@ -1,6 +1,14 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
+    "allow": [
+      "Bash(git checkout:*)",
+      "Bash(git pull --ff-only)",
+      "Bash(git rebase origin/main)",
+      "Bash(git rebase main)",
+      "Bash(gh auth switch -u Its-Nyein)",
+      "Bash(gh auth status)"
+    ],
     "deny": [
       "Bash(git push --force*)",
       "Bash(git push -f*)",
@@ -11,7 +19,9 @@
       "Bash(git push --mirror*)",
       "Bash(git tag *)",
       "Bash(git merge *)",
-      "Bash(git rebase *)",
+      "Bash(git rebase --onto*)",
+      "Bash(git rebase -i*)",
+      "Bash(git rebase --interactive*)",
       "Bash(git reset *)",
       "Bash(git branch -d*)",
       "Bash(git branch -D*)",
@@ -20,6 +30,7 @@
       "Bash(git filter-branch *)",
       "Bash(git commit --amend*)",
       "Bash(git config *)",
+      "Bash(gh auth setup-git*)",
       "Bash(gh pr merge *)",
       "Bash(gh pr close *)",
       "Bash(gh repo *)",
