@@ -67,7 +67,14 @@ export function explainOccurrences(input: DifferentialInput): Occurrence[] {
           filePath,
           line: sourceFile.getLineAndColumnAtPos(pos).line,
           pos,
-          explanation: explain(pos, filePath, sourceFile, callable, input),
+          explanation: explain(
+            seed.key,
+            pos,
+            filePath,
+            sourceFile,
+            callable,
+            input,
+          ),
         });
       }
     }
@@ -141,6 +148,7 @@ function isIdentifierChar(character: string | undefined): boolean {
 }
 
 function explain(
+  seedKey: string,
   pos: number,
   filePath: string,
   sourceFile: SourceFile,
@@ -151,12 +159,13 @@ function explain(
   // in the explicit-constructor case, and accepting "filtered" as its explanation is the
   // whole hole: that the clause was filtered says nothing about whether the `super()` it
   // delegates to was found.
-  const heritage = heritageVerdict(pos, filePath, sourceFile, input);
+  const heritage = heritageVerdict(seedKey, pos, filePath, sourceFile, input);
   if (heritage !== undefined) return heritage;
 
-  if (input.result.usages.some(at(filePath, pos))) return { kind: "usage" };
+  if (input.result.usages.some(at(seedKey, filePath, pos)))
+    return { kind: "usage" };
 
-  const filtered = input.result.filtered.find(at(filePath, pos));
+  const filtered = input.result.filtered.find(at(seedKey, filePath, pos));
   if (filtered !== undefined) {
     return { kind: "filtered", reason: filtered.reason };
   }
@@ -176,7 +185,13 @@ function explain(
     Node.isStringLiteral(node) ||
     Node.isNoSubstitutionTemplateLiteral(node)
   ) {
-    const key = elementAccessKeyVerdict(node, filePath, callable, input);
+    const key = elementAccessKeyVerdict(
+      seedKey,
+      node,
+      filePath,
+      callable,
+      input,
+    );
     if (key !== undefined) return key;
   }
 
@@ -249,6 +264,7 @@ function resolvedDeclarationsOf(node: Node): Node[] {
  * literal that merely contains the name, which the caller is right to treat as text.
  */
 function elementAccessKeyVerdict(
+  seedKey: string,
   literal: Node,
   filePath: string,
   callable: Callable,
@@ -277,9 +293,10 @@ function elementAccessKeyVerdict(
   }
 
   const start = literal.getStart();
-  if (input.result.usages.some(at(filePath, start))) return { kind: "usage" };
+  if (input.result.usages.some(at(seedKey, filePath, start)))
+    return { kind: "usage" };
 
-  const filtered = input.result.filtered.find(at(filePath, start));
+  const filtered = input.result.filtered.find(at(seedKey, filePath, start));
   if (filtered !== undefined) {
     return { kind: "filtered", reason: filtered.reason };
   }
@@ -305,6 +322,7 @@ function elementAccessKeyVerdict(
  * clause was filtered says nothing about whether the `super()` it delegates to was found.
  */
 function heritageVerdict(
+  seedKey: string,
   pos: number,
   filePath: string,
   sourceFile: SourceFile,
@@ -323,7 +341,8 @@ function heritageVerdict(
     return undefined;
   }
 
-  if (input.result.usages.some(at(filePath, pos))) return { kind: "usage" };
+  if (input.result.usages.some(at(seedKey, filePath, pos)))
+    return { kind: "usage" };
 
   const constructor = subclass
     .getConstructors()
@@ -349,9 +368,22 @@ function heritageVerdict(
       };
 }
 
-function at(filePath: string, pos: number) {
-  return (site: { readonly filePath: string; readonly pos: number }): boolean =>
-    site.filePath === filePath && site.pos === pos;
+/**
+ * A record belonging to **this seed**, at this position.
+ *
+ * The seed key is not decoration. Base and head share relative paths, so without it a
+ * base-side occurrence can be explained by a head-side usage that happens to sit at the
+ * same offset — which is the ordinary **rename** shape, where the old and new call sites
+ * land at the same offset in the same file. The check would then report "nothing
+ * unexplained" while the deleted seed's usage was gone.
+ */
+function at(seedKey: string, filePath: string, pos: number) {
+  return (site: {
+    readonly seedKey: string;
+    readonly filePath: string;
+    readonly pos: number;
+  }): boolean =>
+    site.seedKey === seedKey && site.filePath === filePath && site.pos === pos;
 }
 
 /**
