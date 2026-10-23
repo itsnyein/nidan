@@ -36,7 +36,7 @@ Each reported usage carries one relation.
 
 | Relation          | Patterns                                                                                                                 |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `invoke`          | `fn()`, `obj.method()`, `Class.staticMethod()`                                                                           |
+| `invoke`          | `fn()`, `obj.method()`, `obj["method"]()`, `Class.staticMethod()`                                                        |
 | `construct`       | `new Class()`, and `super()` in a subclass                                                                               |
 | `jsx-render`      | `<Comp />`, `<UI.Card />` — intrinsic elements and fragments are excluded                                                |
 | `value-reference` | A callable used as a value: passed as an argument, given as a prop, placed in an array, assigned, or handed to a wrapper |
@@ -49,6 +49,8 @@ const Card = memo(Panel); // value-reference on Panel
 items.map(formatRow); // value-reference on formatRow
 formatRow(item); // invoke
 ```
+
+A member call written with a **string-literal** key is the same usage as the dotted form: `obj["method"]()` and `obj.method()` name the same member and both report `invoke`. A key that is not a string literal names no member at compile time and is not resolved — see [computed member access](limitations.md#computed-member-access-is-not-resolved).
 
 ## Module patterns
 

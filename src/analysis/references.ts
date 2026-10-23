@@ -270,9 +270,8 @@ function isDeclarationNameNode(node: Node, parent: Node): boolean {
  * A class's `extends` clause, and nothing else.
  *
  * `implements` is a type position that §9 already settles, and an interface's `extends`
- * is one too. Matching any heritage clause routed both into the bucket reserved for the
- * one shape nobody has ruled on, which would have read as "undecided" for references
- * whose answer is written down.
+ * is one too. Matching any heritage clause sent both down the construct path, which
+ * answers a question neither of them asks: neither constructs anything.
  */
 function isHeritageReference(parent: Node): boolean {
   if (!Node.isExpressionWithTypeArguments(parent)) return false;
@@ -423,11 +422,16 @@ function relationOf(node: Node): Relation {
 }
 
 /**
- * The outermost property access the reference is the name of.
+ * The outermost member access the reference is the name of.
  *
  * `obj.method()` reaches here as the identifier `method`, whose parent is the property
  * access rather than the call; without this step every member call would classify as a
  * value reference. `<UI.Card />` is the same shape with a JSX tag.
+ *
+ * `obj["method"]()` is the same access written differently (§15b): the reference arrives
+ * as the **string literal** key, and the compiler resolves it to the same member, so it
+ * walks the same way and classifies the same. A non-literal key addresses no particular
+ * member, the compiler never returns it as a reference, and so nothing reaches here.
  */
 function outermostAccess(node: Node): Node {
   let current = node;
@@ -439,7 +443,14 @@ function outermostAccess(node: Node): Node {
     const isNamedPart =
       Node.isPropertyAccessExpression(parent) &&
       parent.getNameNode() === current;
-    if (!isNamedPart) return current;
+    // Only a string literal. A computed key that is anything else does not name a member
+    // at compile time, so treating it as one would invent an access the compiler never
+    // resolved.
+    const isLiteralKey =
+      Node.isElementAccessExpression(parent) &&
+      parent.getArgumentExpression() === current &&
+      Node.isStringLiteral(current);
+    if (!isNamedPart && !isLiteralKey) return current;
     current = parent;
   }
 }
