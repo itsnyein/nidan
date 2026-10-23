@@ -1,0 +1,43 @@
+{
+  "description": "Instance, static, and string-literal element-access calls of changed methods all report invoke with exact resolution, so the three spellings of a member call are one usage kind rather than three.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/client.ts :: Client :: method :: send",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/use.ts :: :: function :: report",
+            "site": { "file": "src/use.ts", "line": 4 }
+          },
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/use.ts :: :: function :: report",
+            "site": { "file": "src/use.ts", "line": 5 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      },
+      {
+        "key": "src/client.ts :: Client :: method :: describe :: static",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/use.ts :: :: function :: report",
+            "site": { "file": "src/use.ts", "line": 6 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": []
+  }
+}

@@ -112,3 +112,4 @@ can be tightened deliberately.
 | [`usage-barrel-two-hops`](usage-barrel-two-hops/README.md)                         | Two re-export hops still yield one usage                         |
 | [`usage-constructor-cross-file`](usage-constructor-cross-file/README.md)           | `new` and a subclass `super()` in separate modules               |
 | [`usage-constructor-implicit`](usage-constructor-implicit/README.md)               | A subclass with no constructor still constructs its base         |
+| [`usage-member-calls`](usage-member-calls/README.md)                               | Instance, static, and `["literal"]` calls all report `invoke`    |
