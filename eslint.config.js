@@ -34,5 +34,14 @@ export default tseslint.config(
     files: ["**/*.js"],
     extends: [tseslint.configs.disableTypeChecked],
   },
+  {
+    // Maintenance scripts are plain Node modules run directly, so they are outside the
+    // TypeScript program for the same reason and need Node's globals declared.
+    files: ["scripts/**/*.mjs"],
+    extends: [tseslint.configs.disableTypeChecked],
+    languageOptions: {
+      globals: { process: "readonly", console: "readonly" },
+    },
+  },
   prettier,
 );
