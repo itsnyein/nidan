@@ -293,11 +293,13 @@ describe("the generator reaches the shapes it claims", () => {
     const declared: readonly Shape[] = [
       "comment-occurrence",
       "concrete-member-call",
+      "deleted-seed",
       "direct-call",
       "held-as-value",
       "interface-typed-receiver",
       "jsx-direct-tag",
       "jsx-member-tag",
+      "literal-key-member-call",
       "one-hop",
       "same-name-other-module",
       "shadowed-local",

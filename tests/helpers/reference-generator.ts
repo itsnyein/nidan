@@ -23,6 +23,8 @@ export type Shape =
   | "same-name-other-module"
   | "interface-typed-receiver"
   | "concrete-member-call"
+  | "literal-key-member-call"
+  | "deleted-seed"
   | "held-as-value"
   | "jsx-direct-tag"
   | "jsx-member-tag"
@@ -118,6 +120,9 @@ export function generateCase(random: Random, index: number): GeneratedCase {
   // Counted as the case is built, so the count and the source cannot disagree.
   const counted = noRelations();
   const jsx = kind === "component";
+  // Function seeds only, for now: their use file is the one with no class or interface
+  // scaffolding to keep consistent across a deletion.
+  const deleted = kind === "function" && random.chance(0.5);
   // A component seed is `.tsx`; everything else stays `.ts`, so only the JSX cases pay
   // for the compiler option and the runtime shim.
   const seedPath = jsx ? "src/seed.tsx" : "src/seed.ts";
@@ -139,6 +144,11 @@ export function generateCase(random: Random, index: number): GeneratedCase {
     buildFunctionUse(files, name, entry, random, shapes, notes, counted);
   }
 
+  if (deleted) {
+    shapes.add("deleted-seed");
+    notes.push("deleted-seed");
+  }
+
   if (random.chance(0.5)) {
     files["src/other.ts"] = sameNameElsewhere(kind, name);
     shapes.add("same-name-other-module");
@@ -146,6 +156,32 @@ export function generateCase(random: Random, index: number): GeneratedCase {
   }
 
   const second = secondVariantOf(kind, name);
+
+  // A **deleted** seed, not a modified one. Every other case changes the seed in head, so
+  // the base-snapshot search path and the harness's base-side scanning ran only against
+  // hand-written inputs — which is exactly where the position-only matching hole lived.
+  // Head keeps one unrelated module so it still type-checks with nothing left to resolve.
+  if (deleted) {
+    // Only the seed and the modules that reference it are removed. `src/other.ts` is
+    // self-contained — it declares and calls its *own* same-named function — so deleting
+    // it too would make that one a second deleted seed with a usage of its own, which the
+    // count was never built to include.
+    const survivors =
+      files["src/other.ts"] === undefined
+        ? {}
+        : { "src/other.ts": files["src/other.ts"] };
+    return {
+      base: files,
+      head: {
+        "src/placeholder.ts": "export const placeholder = 1;\n",
+        ...survivors,
+      },
+      description: notes.join(", "),
+      shapes,
+      jsx,
+      expectedRelations: counted,
+    };
+  }
 
   return {
     base: files,
@@ -261,6 +297,21 @@ function buildMethodUse(
     counted.invoke += 1;
     shapes.add("concrete-member-call");
     notes.push("concrete-member-call");
+  }
+
+  if (random.chance(0.5)) {
+    // The element-access spelling, ruled and implemented in this milestone but never
+    // generated until now — the two shapes the milestone's own rulings created were the
+    // ones its generated suite did not reach.
+    lines.push(
+      ``,
+      `export function callIndexed(target: ${name}Shape): string {`,
+      `  return target["run"]();`,
+      `}`,
+    );
+    counted.invoke += 1;
+    shapes.add("literal-key-member-call");
+    notes.push("literal-key-member-call");
   }
 
   files["src/use.ts"] = `${lines.join("\n")}\n`;

@@ -79,6 +79,14 @@ export interface SnapshotReferences {
   readonly index: CallableIndex;
 }
 
+/** An impossible state reached during reference discovery (never a reported gap). */
+export class ReferenceDiscoveryError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ReferenceDiscoveryError";
+  }
+}
+
 export interface FindUsagesInput {
   readonly seeds: readonly Seed[];
   readonly base: SnapshotReferences;
@@ -101,10 +109,15 @@ export function findUsages(input: FindUsagesInput): ReferenceResult {
     const callable = snapshot.index.callables.find(
       (entry) => entry.key === seed.key,
     );
-    // A seed whose key is not in the index cannot be searched for. That is not silence:
-    // seed mapping only emits keys it took from this same index, so this is unreachable
-    // rather than a case to degrade into.
-    if (callable === undefined) continue;
+    // Seed mapping only emits keys it took from this same index, so a missing one is an
+    // impossible state rather than a case to degrade into. It throws instead of being
+    // skipped: a `continue` here would drop every usage of that seed silently, which is
+    // indistinguishable in the output from a callable that genuinely has none.
+    if (callable === undefined) {
+      throw new ReferenceDiscoveryError(
+        `seed ${seed.key} is not in the ${seed.snapshot} index`,
+      );
+    }
 
     collectForSeed(seed, callable, snapshot, input.repoRoot, {
       usages,
