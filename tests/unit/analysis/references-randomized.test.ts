@@ -19,6 +19,7 @@ import {
   unexplainedOf,
 } from "../../helpers/differential.js";
 import { createFixtureRepo } from "../../helpers/fixture-repo.js";
+import { JSX_COMPILER_OPTIONS, writeJsxShim } from "../../helpers/jsx-shim.js";
 import {
   generateCase,
   randomFrom,
@@ -53,49 +54,12 @@ function tsconfigFor(jsx: boolean): string {
         moduleResolution: "NodeNext",
         strict: true,
         noEmit: true,
-        ...(jsx ? { jsx: "react-jsx", jsxImportSource: "tiny-ui" } : {}),
+        ...(jsx ? JSX_COMPILER_OPTIONS : {}),
       },
       include: ["src"],
     },
     null,
     2,
-  );
-}
-
-/**
- * The smallest JSX runtime a generated `.tsx` case can type-check against.
- *
- * At the case root rather than inside a snapshot, because both snapshots resolve against
- * the same installed dependency. Written only for cases that contain JSX, so the other
- * kinds stay exactly as cheap as they were.
- */
-async function writeJsxShim(caseDir: string): Promise<void> {
-  const shim = join(caseDir, "node_modules", "tiny-ui");
-  await mkdir(shim, { recursive: true });
-  await writeFile(
-    join(shim, "package.json"),
-    `${JSON.stringify({
-      name: "tiny-ui",
-      version: "1.0.0",
-      types: "./index.d.ts",
-      exports: {
-        ".": { types: "./index.d.ts" },
-        "./jsx-runtime": { types: "./jsx-runtime.d.ts" },
-      },
-    })}\n`,
-  );
-  await writeFile(
-    join(shim, "jsx-runtime.d.ts"),
-    "export namespace JSX {\n" +
-      "  interface Element {\n    readonly rendered: unique symbol;\n  }\n" +
-      "  interface IntrinsicElements {\n    [name: string]: unknown;\n  }\n}\n" +
-      "export declare function jsx(type: unknown, props: unknown): JSX.Element;\n" +
-      "export declare function jsxs(type: unknown, props: unknown): JSX.Element;\n" +
-      "export declare const Fragment: unique symbol;\n",
-  );
-  await writeFile(
-    join(shim, "index.d.ts"),
-    'export type { JSX } from "./jsx-runtime.js";\n',
   );
 }
 
