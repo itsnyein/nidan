@@ -113,3 +113,4 @@ can be tightened deliberately.
 | [`usage-constructor-cross-file`](usage-constructor-cross-file/README.md)           | `new` and a subclass `super()` in separate modules               |
 | [`usage-constructor-implicit`](usage-constructor-implicit/README.md)               | A subclass with no constructor still constructs its base         |
 | [`usage-member-calls`](usage-member-calls/README.md)                               | Instance, static, and `["literal"]` calls all report `invoke`    |
+| [`usage-value-position`](usage-value-position/README.md)                           | A mixin call in `extends` and a tagged template are `invoke`     |

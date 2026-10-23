@@ -141,6 +141,49 @@ function actualUsages(result: ReferenceResult): string[] {
     .sort();
 }
 
+/**
+ * Fixtures whose record states a ruling that is **not yet implemented**.
+ *
+ * Each entry is asserted to **fail** below, not skipped. A skip-list could hide a genuine
+ * regression and would outlive its fix silently; asserting the current wrong behaviour
+ * means the day the ruling lands, the `still` test fails and forces the entry out.
+ */
+const PENDING_USAGES = new Map<string, string>([
+  [
+    "usage-value-position",
+    "the value-position and tagged-template rulings are not implemented: everything under a class extends expression is filtered type-only, and a tagged template has no call expression for the relation to read",
+  ],
+]);
+
+describe("rulings not yet implemented", () => {
+  it.each([...PENDING_USAGES])(
+    "%s still loses the extends-expression references and miscalls the tag",
+    async (name) => {
+      const outcome = await analyze(join("tests", "fixtures", name));
+
+      // The current behaviour, stated exactly. When the rulings land this fails, which is
+      // the point: the entry cannot survive its own fix.
+      expect(actualUsages(outcome.result)).toEqual([
+        "src/tag.ts :: :: function :: label | value-reference | src/use.ts :: module | src/use.ts:7 | exact",
+      ]);
+      // Both extends-expression references are filtered as a **type** position, which is
+      // the defect itself rather than a side effect of it.
+      expect(
+        outcome.result.filtered
+          .filter((reference) => reference.reason === "type-only")
+          .filter((reference) => reference.filePath === "src/use.ts")
+          .map((reference) => reference.seedKey.split(" :: ").pop() ?? "")
+          .sort(),
+      ).toEqual(["constructor", "withRetry"]);
+      // And the harness agrees with all of it — nothing is unexplained. This is the half
+      // the fix must close independently: a type-only record must not be allowed to
+      // explain an occurrence sitting in a value position.
+      expect(unexplainedOf(outcome.occurrences)).toEqual([]);
+    },
+    TIMEOUT_MS,
+  );
+});
+
 describe("usages against the frozen fixtures", () => {
   // **Every** fixture, not only the ones whose records declare a usage. Keying on record
   // content is the defect this repository has already paid for twice: a fixture that
@@ -148,7 +191,9 @@ describe("usages against the frozen fixtures", () => {
   // "has at least one usage" removed exactly those from the check. A record that empties
   // itself would also have deleted its own assertion.
   const names = allFixtures();
-  const declaring = names.filter((name) => expectedUsages(name) !== undefined);
+  const declaring = names
+    .filter((name) => expectedUsages(name) !== undefined)
+    .filter((name) => !PENDING_USAGES.has(name));
 
   it("includes the fixtures that freeze an empty usage list", () => {
     // The property the enumeration exists for, asserted rather than assumed. A fixture

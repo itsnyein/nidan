@@ -1,0 +1,51 @@
+{
+  "description": "A class extends expression is a value position: the mixin call in it is invoke and its argument is a value-reference; a tagged template is an invoke of its tag.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/mix.ts :: :: function :: withRetry",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/use.ts :: module",
+            "site": { "file": "src/use.ts", "line": 5 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      },
+      {
+        "key": "src/client.ts :: Client :: constructor :: constructor",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "value-reference",
+            "resolution": { "status": "exact" },
+            "from": "src/use.ts :: module",
+            "site": { "file": "src/use.ts", "line": 5 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      },
+      {
+        "key": "src/tag.ts :: :: function :: label",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/use.ts :: module",
+            "site": { "file": "src/use.ts", "line": 7 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": []
+  }
+}
