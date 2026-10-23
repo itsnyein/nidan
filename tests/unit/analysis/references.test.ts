@@ -97,7 +97,6 @@ async function analyze(repoPath: string): Promise<Outcome> {
  * there are none, and an absent key asserts nothing. Treating the two the same would
  * either drop the five fixtures that freeze an empty list — the ones that catch
  * *over*-reporting — or demand an expectation from eleven records that never made one.
- * `relation` is not asserted here; classification is a later change.
  */
 function expectedUsages(name: string): string[] | undefined {
   const raw = readFileSync(
@@ -225,6 +224,85 @@ describe("the four equivalence variants agree", () => {
       ]);
     },
     TIMEOUT_MS * 4,
+  );
+});
+
+describe("a reference reached through a property access", () => {
+  it(
+    "reports a member call as invoke rather than as a value reference",
+    async () => {
+      // The shape the name claims: the reference the compiler returns is the identifier
+      // `send`, whose parent is the **property access**, not the call. Classifying from
+      // that parent alone reads every member call as a value reference, and no frozen
+      // fixture calls a method through a receiver — so deleting the walk to the
+      // outermost access leaves the whole suite green. This is the test that notices.
+      const base = {
+        "src/client.ts":
+          "export class Client {\n  send(body: string): string {\n    return body;\n  }\n}\n",
+        "src/use.ts":
+          'import { Client } from "./client.js";\n\nexport function post(client: Client): string {\n  return client.send("x");\n}\n',
+      };
+      const outcome = await analyze(
+        await throwawayCase({
+          base,
+          head: {
+            ...base,
+            "src/client.ts":
+              "export class Client {\n  send(body: string): string {\n    return body.trim();\n  }\n}\n",
+          },
+        }),
+      );
+
+      expect(
+        outcome.result.usages.map(
+          (usage) =>
+            `${usage.relation} ${usage.filePath}:${String(usage.line)} from ${usage.from}`,
+        ),
+      ).toEqual(["invoke src/use.ts:4 from src/use.ts :: :: function :: post"]);
+      expect(unexplainedOf(outcome.occurrences)).toEqual([]);
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "reports a member JSX tag as jsx-render rather than as a value reference",
+    async () => {
+      // The second spelling of the same shape, and the reason this is a separate test:
+      // `<UI.Card />` parses as a JSX member expression, which ts-morph happens to
+      // expose as a property access. The member-call test above would not notice if that
+      // ever stopped being true. The frozen `layout-*` fixtures render `<Card />` — a
+      // bare identifier tag, with no property access to walk.
+      const base = {
+        "src/ui.tsx":
+          'import type { JSX } from "tiny-ui";\n\nexport function Card(props: { title: string }): JSX.Element {\n  return <span>{props.title}</span>;\n}\n',
+        "src/app.tsx":
+          'import type { JSX } from "tiny-ui";\nimport * as UI from "./ui.js";\n\nexport function App(): JSX.Element {\n  return <UI.Card title="hello" />;\n}\n',
+      };
+      const outcome = await analyze(
+        await throwawayCase(
+          {
+            base,
+            head: {
+              ...base,
+              "src/ui.tsx":
+                'import type { JSX } from "tiny-ui";\n\nexport function Card(props: { title: string }): JSX.Element {\n  return <span>{props.title.trim()}</span>;\n}\n',
+            },
+          },
+          { jsx: true },
+        ),
+      );
+
+      expect(
+        outcome.result.usages.map(
+          (usage) =>
+            `${usage.relation} ${usage.filePath}:${String(usage.line)} from ${usage.from}`,
+        ),
+      ).toEqual([
+        "jsx-render src/app.tsx:5 from src/app.tsx :: :: function :: App",
+      ]);
+      expect(unexplainedOf(outcome.occurrences)).toEqual([]);
+    },
+    TIMEOUT_MS,
   );
 });
 
@@ -683,12 +761,20 @@ describe("the differential check can fail", () => {
   );
 });
 
-async function throwawayCase(files: {
-  base: Record<string, string>;
-  head: Record<string, string>;
-}): Promise<string> {
+async function throwawayCase(
+  files: {
+    base: Record<string, string>;
+    head: Record<string, string>;
+  },
+  // A `.tsx` case needs the compiler option and a JSX runtime to resolve against:
+  // without them every tag is an error and the references come from a program that did
+  // not type-check, which is not the thing the test means to measure. The shim mirrors
+  // the one the `layout-*` fixtures use, so the two agree on what a working JSX case is.
+  options: { jsx?: boolean } = {},
+): Promise<string> {
   const caseDir = await mkdtemp(join(tmpdir(), "nidan-references-"));
   cleanups.push(() => rm(caseDir, { recursive: true, force: true }));
+  if (options.jsx === true) await writeJsxShim(caseDir);
   for (const [snapshot, entries] of Object.entries(files)) {
     await mkdir(join(caseDir, snapshot), { recursive: true });
     await writeFile(
@@ -701,6 +787,9 @@ async function throwawayCase(files: {
             moduleResolution: "NodeNext",
             strict: true,
             noEmit: true,
+            ...(options.jsx === true
+              ? { jsx: "react-jsx", jsxImportSource: "tiny-ui" }
+              : {}),
           },
           include: ["src"],
         },
@@ -722,4 +811,44 @@ async function throwawayCase(files: {
     throw new Error("throwaway case is missing its head snapshot");
   }
   return caseDir;
+}
+
+/**
+ * The smallest JSX runtime a `.tsx` case can type-check against.
+ *
+ * At the case root rather than inside a snapshot, because both snapshots resolve against
+ * the same installed dependency — the same arrangement the `layout-*` fixtures freeze.
+ */
+async function writeJsxShim(caseDir: string): Promise<void> {
+  const shim = join(caseDir, "node_modules", "tiny-ui");
+  await mkdir(shim, { recursive: true });
+  await writeFile(
+    join(shim, "package.json"),
+    `${JSON.stringify(
+      {
+        name: "tiny-ui",
+        version: "1.0.0",
+        types: "./index.d.ts",
+        exports: {
+          ".": { types: "./index.d.ts" },
+          "./jsx-runtime": { types: "./jsx-runtime.d.ts" },
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  await writeFile(
+    join(shim, "jsx-runtime.d.ts"),
+    "export namespace JSX {\n" +
+      "  interface Element {\n    readonly rendered: unique symbol;\n  }\n" +
+      "  interface IntrinsicElements {\n    [name: string]: unknown;\n  }\n}\n" +
+      "export declare function jsx(type: unknown, props: unknown): JSX.Element;\n" +
+      "export declare function jsxs(type: unknown, props: unknown): JSX.Element;\n" +
+      "export declare const Fragment: unique symbol;\n",
+  );
+  await writeFile(
+    join(shim, "index.d.ts"),
+    'export type { JSX } from "./jsx-runtime.js";\n',
+  );
 }

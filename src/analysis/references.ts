@@ -203,7 +203,7 @@ function nameNodeOf(node: Node): ReferenceSearchNode | undefined {
   if (!Node.hasName(node)) return undefined;
   const nameNode = node.getNameNode();
   // An anonymous default export has no name node to search from; its references are
-  // reached through the export assignment, which is M4's `value-reference` work.
+  // reached through the export assignment, which the value-reference projection covers.
   return Node.isReferenceFindable(nameNode) ? nameNode : undefined;
 }
 

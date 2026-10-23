@@ -35,7 +35,7 @@ export interface GeneratedCase {
   /**
    * How many usages the case was **built** to contain.
    *
-   * Derived from what the generator emitted, never from what omen reported — a count
+   * Derived from what the generator emitted, never from what nidan reported — a count
    * taken from the tool asserts that the tool does what it does. This is the one check
    * that catches over-reporting precisely rather than structurally: the differential
    * invariant cannot see an extra usage, because an extra usage explains its own
