@@ -305,6 +305,104 @@ describe("a call through a string-literal element access", () => {
   );
 });
 
+/**
+ * Every element-access key shape, and whether it names a member at compile time.
+ *
+ * One table, two consumers. The classifier decides which keys become usages; the
+ * differential check decides which keys it will hold discovery to. They are **separate
+ * implementations on purpose** — a check that shared the classifier's logic could not
+ * catch a bug in it — and this is what stops them drifting apart in silence.
+ *
+ * Each `line` is a line of the source below. Keep them in step.
+ */
+const KEY_SHAPES = [
+  { line: 4, shape: "string literal", namesAMember: true },
+  { line: 5, shape: "no-substitution template literal", namesAMember: true },
+  {
+    line: 6,
+    shape: "template literal with a substitution",
+    namesAMember: false,
+  },
+  { line: 8, shape: "identifier holding a literal type", namesAMember: false },
+  { line: 9, shape: "computed expression", namesAMember: false },
+] as const;
+
+const KEY_SHAPE_CASE = {
+  "src/client.ts":
+    "export class Client {\n  send(body: string): string {\n    return body;\n  }\n}\n",
+  "src/use.ts":
+    'import { Client } from "./client.js";\n' +
+    "\n" +
+    "export function post(client: Client, part: string, prefix: string): string {\n" +
+    '  const stringKey = client["send"]("1");\n' +
+    '  const templateKey = client[`send`]("2");\n' +
+    '  const substituted = client[`${part}send` as "send"]("3");\n' +
+    '  const send = "send" as const;\n' +
+    '  const identifierKey = client[send]("4");\n' +
+    '  const computedKey = client[(prefix + "send") as "send"]("5");\n' +
+    "  return stringKey + templateKey + substituted + identifierKey + computedKey;\n" +
+    "}\n",
+};
+
+describe("the classifier and the differential check agree on key shapes", () => {
+  it(
+    "treats exactly the literal keys as references, on both sides",
+    async () => {
+      // The two sides are read from different places: `usages` comes from the analyzer,
+      // `unexplained` from the harness. Both are compared against the same column of the
+      // table, so a change to either implementation alone breaks this.
+      const outcome = await analyze(
+        await throwawayCase({
+          base: KEY_SHAPE_CASE,
+          head: {
+            ...KEY_SHAPE_CASE,
+            "src/client.ts":
+              "export class Client {\n  send(body: string): string {\n    return body.trim();\n  }\n}\n",
+          },
+        }),
+      );
+
+      const namesAMember = KEY_SHAPES.filter((entry) => entry.namesAMember).map(
+        (entry) => entry.line,
+      );
+
+      // Side one: what the classifier reported.
+      expect(outcome.result.usages.map((usage) => usage.line).sort()).toEqual(
+        namesAMember,
+      );
+      expect(
+        outcome.result.usages.map(
+          (usage) => `${usage.relation} ${usage.resolution.status}`,
+        ),
+      ).toEqual(namesAMember.map(() => "invoke exact"));
+
+      // Side two: what the harness will hold discovery to. Dropping every usage makes it
+      // name the keys it considers references — the same question, asked of the other
+      // implementation.
+      expect(
+        unexplainedOf(outcome.explain({ ...outcome.result, usages: [] }))
+          .map((occurrence) => occurrence.line)
+          .sort(),
+      ).toEqual(namesAMember);
+
+      // And the harness actually looked at every shape. Without this the agreement could
+      // be satisfied by a shape producing no occurrence at all, which would agree about
+      // nothing.
+      const seen = new Set(
+        outcome.occurrences
+          .filter((occurrence) => occurrence.filePath === "src/use.ts")
+          .map((occurrence) => occurrence.line),
+      );
+      expect(
+        KEY_SHAPES.filter((entry) => !seen.has(entry.line)).map(
+          (entry) => entry.shape,
+        ),
+      ).toEqual([]);
+    },
+    TIMEOUT_MS,
+  );
+});
+
 describe("a call through a template-literal element access", () => {
   // Three backtick readings of `send`, one per line, and only the first keys an access:
   // a no-substitution key, a key **with** a substitution, and a plain template string.
