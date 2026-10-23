@@ -9,6 +9,7 @@ import { diffCommits } from "../../../src/analysis/diff.js";
 import { enumerateCallables } from "../../../src/analysis/identity.js";
 import {
   findUsages,
+  type Relation,
   type SnapshotReferences,
 } from "../../../src/analysis/references.js";
 import { mapSeeds } from "../../../src/analysis/seeds.js";
@@ -43,20 +44,60 @@ const CASES = 24;
  */
 const RANDOMIZED = process.env["NIDAN_RANDOMIZED"] === "1";
 
-const TSCONFIG = JSON.stringify(
-  {
-    compilerOptions: {
-      target: "ES2022",
-      module: "NodeNext",
-      moduleResolution: "NodeNext",
-      strict: true,
-      noEmit: true,
+function tsconfigFor(jsx: boolean): string {
+  return JSON.stringify(
+    {
+      compilerOptions: {
+        target: "ES2022",
+        module: "NodeNext",
+        moduleResolution: "NodeNext",
+        strict: true,
+        noEmit: true,
+        ...(jsx ? { jsx: "react-jsx", jsxImportSource: "tiny-ui" } : {}),
+      },
+      include: ["src"],
     },
-    include: ["src"],
-  },
-  null,
-  2,
-);
+    null,
+    2,
+  );
+}
+
+/**
+ * The smallest JSX runtime a generated `.tsx` case can type-check against.
+ *
+ * At the case root rather than inside a snapshot, because both snapshots resolve against
+ * the same installed dependency. Written only for cases that contain JSX, so the other
+ * kinds stay exactly as cheap as they were.
+ */
+async function writeJsxShim(caseDir: string): Promise<void> {
+  const shim = join(caseDir, "node_modules", "tiny-ui");
+  await mkdir(shim, { recursive: true });
+  await writeFile(
+    join(shim, "package.json"),
+    `${JSON.stringify({
+      name: "tiny-ui",
+      version: "1.0.0",
+      types: "./index.d.ts",
+      exports: {
+        ".": { types: "./index.d.ts" },
+        "./jsx-runtime": { types: "./jsx-runtime.d.ts" },
+      },
+    })}\n`,
+  );
+  await writeFile(
+    join(shim, "jsx-runtime.d.ts"),
+    "export namespace JSX {\n" +
+      "  interface Element {\n    readonly rendered: unique symbol;\n  }\n" +
+      "  interface IntrinsicElements {\n    [name: string]: unknown;\n  }\n}\n" +
+      "export declare function jsx(type: unknown, props: unknown): JSX.Element;\n" +
+      "export declare function jsxs(type: unknown, props: unknown): JSX.Element;\n" +
+      "export declare const Fragment: unique symbol;\n",
+  );
+  await writeFile(
+    join(shim, "index.d.ts"),
+    'export type { JSX } from "./jsx-runtime.js";\n',
+  );
+}
 
 interface Outcome {
   readonly unexplained: readonly string[];
@@ -65,7 +106,7 @@ interface Outcome {
   readonly diagnostics: readonly string[];
   readonly occurrences: number;
   readonly seeds: number;
-  readonly usages: number;
+  readonly relations: Record<Relation, number>;
 }
 
 /**
@@ -90,12 +131,17 @@ async function analyseCase(
   generated: GeneratedCase,
   caseDir: string,
 ): Promise<Outcome> {
+  if (generated.jsx) await writeJsxShim(caseDir);
+
   for (const [snapshot, files] of [
     ["base", generated.base],
     ["head", generated.head],
   ] as const) {
     await mkdir(join(caseDir, snapshot, "src"), { recursive: true });
-    await writeFile(join(caseDir, snapshot, "tsconfig.json"), `${TSCONFIG}\n`);
+    await writeFile(
+      join(caseDir, snapshot, "tsconfig.json"),
+      `${tsconfigFor(generated.jsx)}\n`,
+    );
     await writeFile(
       join(caseDir, snapshot, "package.json"),
       `${JSON.stringify({ name: "case", private: true, type: "module" })}\n`,
@@ -195,7 +241,13 @@ async function analyseRepo(repo: {
     }),
     occurrences: occurrences.length,
     seeds: seeds.seeds.length,
-    usages: result.usages.length,
+    relations: result.usages.reduce<Record<Relation, number>>(
+      (counts, usage) => {
+        counts[usage.relation] += 1;
+        return counts;
+      },
+      { invoke: 0, construct: 0, "jsx-render": 0, "value-reference": 0 },
+    ),
   };
 }
 
@@ -242,8 +294,13 @@ describe.skipIf(!RANDOMIZED)("generated reference cases", () => {
         // is the only check here that catches over-reporting precisely: the differential
         // invariant cannot see an extra usage, because an extra usage explains its own
         // occurrence.
-        expect(outcome.usages, `usage count\n  ${where}`).toBe(
-          generated.expectedUsages,
+        //
+        // Compared per relation, not as a total. A total cannot see a misclassification:
+        // a rendered component reported as a value reference keeps the count right,
+        // explains its own occurrence, and is wrong in the one field the usage is read
+        // for.
+        expect(outcome.relations, `usages by relation\n  ${where}`).toEqual(
+          generated.expectedRelations,
         );
         expect(
           outcome.occurrences,
@@ -271,8 +328,12 @@ describe("the generator reaches the shapes it claims", () => {
 
     const declared: readonly Shape[] = [
       "comment-occurrence",
+      "concrete-member-call",
       "direct-call",
+      "held-as-value",
       "interface-typed-receiver",
+      "jsx-direct-tag",
+      "jsx-member-tag",
       "one-hop",
       "same-name-other-module",
       "shadowed-local",
@@ -296,7 +357,7 @@ describe("the generator reaches the shapes it claims", () => {
     );
 
     for (const parts of descriptions) {
-      expect(parts[0]).toMatch(/^(function|class|method)#\d+$/u);
+      expect(parts[0]).toMatch(/^(function|class|method|component)#\d+$/u);
       expect(parts[1]).toMatch(/^hops=[012]$/u);
     }
   });
