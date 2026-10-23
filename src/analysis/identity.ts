@@ -455,6 +455,31 @@ function statementIdOf(node: Node): string {
   return `${node.getSourceFile().getFilePath()}:${String(statement.getStart(true))}`;
 }
 
+/**
+ * The key a class's constructor has, or **would** have if it declared one.
+ *
+ * Exported because reference discovery needs the second case: a subclass with no explicit
+ * constructor still constructs its base, and the usage is reported `from` that implicit
+ * constructor. Building the key there instead would put the public key format in two
+ * places, and the one that is only exercised by implicit constructors is the one that
+ * would drift unnoticed.
+ */
+export function constructorKeyFor(
+  classDeclaration: Node,
+  filePath: string,
+): string | undefined {
+  // A class expression may be anonymous, and an anonymous base has no key to name.
+  if (!Node.hasName(classDeclaration)) return undefined;
+  const name = classDeclaration.getName();
+  return buildKey(
+    filePath,
+    [...containersOf(classDeclaration), name],
+    "constructor",
+    "constructor",
+    false,
+  );
+}
+
 function buildKey(
   filePath: string,
   containerChain: readonly string[],

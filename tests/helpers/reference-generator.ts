@@ -32,6 +32,16 @@ export interface GeneratedCase {
   readonly description: string;
   /** The shapes this case actually contains, for the coverage assertion. */
   readonly shapes: ReadonlySet<Shape>;
+  /**
+   * How many usages the case was **built** to contain.
+   *
+   * Derived from what the generator emitted, never from what nidan reported — a count
+   * taken from the tool asserts that the tool does what it does. This is the one check
+   * that catches over-reporting precisely rather than structurally: the differential
+   * invariant cannot see an extra usage, because an extra usage explains its own
+   * occurrence.
+   */
+  readonly expectedUsages: number;
 }
 
 export interface Random {
@@ -81,20 +91,22 @@ export function generateCase(random: Random, index: number): GeneratedCase {
   const hops = kind === "method" ? 0 : random.int(3);
   const shapes = new Set<Shape>();
   const notes: string[] = [`${kind}#${String(index)}`, `hops=${String(hops)}`];
+  // Counted as the case is built, so the count and the source cannot disagree.
+  const counted = { usages: 0 };
 
   const files: Record<string, string> = {};
   const entry = buildBarrels(files, name, hops, shapes);
 
   if (kind === "method") {
     files["src/seed.ts"] = methodSeed(name, "first");
-    buildInterfaceUse(files, name, shapes);
+    buildInterfaceUse(files, name, shapes, counted);
     notes.push("interface-typed-receiver");
   } else if (kind === "class") {
     files["src/seed.ts"] = classSeed(name, "first");
-    buildClassUse(files, name, entry, random, shapes, notes);
+    buildClassUse(files, name, entry, random, shapes, notes, counted);
   } else {
     files["src/seed.ts"] = functionSeed(name, "first");
-    buildFunctionUse(files, name, entry, random, shapes, notes);
+    buildFunctionUse(files, name, entry, random, shapes, notes, counted);
   }
 
   if (random.chance(0.5)) {
@@ -115,6 +127,7 @@ export function generateCase(random: Random, index: number): GeneratedCase {
     head: { ...files, "src/seed.ts": second },
     description: notes.join(", "),
     shapes,
+    expectedUsages: counted.usages,
   };
 }
 
@@ -178,11 +191,15 @@ function buildInterfaceUse(
   files: Record<string, string>,
   name: string,
   shapes: Set<Shape>,
+  counted: { usages: number },
 ): void {
   files["src/use.ts"] =
     `import type { ${name}Shape } from "./seed.js";\n\n` +
     `export function callIt(target: ${name}Shape): string {\n  return target.run();\n}\n`;
   shapes.add("interface-typed-receiver");
+  // One call. It resolves to the interface member rather than to the seed, so it is
+  // reported `ambiguous` — but it is still one usage, which is what this counts.
+  counted.usages += 1;
 }
 
 function buildFunctionUse(
@@ -192,6 +209,7 @@ function buildFunctionUse(
   random: Random,
   shapes: Set<Shape>,
   notes: string[],
+  counted: { usages: number },
 ): void {
   const lines = [`import { ${name} } from "${entry}";`, ""];
 
@@ -211,6 +229,7 @@ function buildFunctionUse(
     `  return ${name}().toUpperCase();`,
     `}`,
   );
+  counted.usages += 1;
 
   if (random.chance(0.5)) {
     // A local of the same name, shadowing the import inside its own function.
@@ -221,12 +240,20 @@ function buildFunctionUse(
       `  return ${name}();`,
       `}`,
     );
+    // No count: both occurrences resolve to the local, not to the seed.
     shapes.add("shadowed-local");
     notes.push("shadowed-local");
   }
 
   if (random.chance(0.5)) {
-    lines.push(``, `export const held: typeof ${name} = ${name};`);
+    // A pure type position: the annotation is filtered and the parameter is never the
+    // seed, so this adds an occurrence to explain and no usage to count.
+    lines.push(
+      ``,
+      `export function take(f: typeof ${name}): string {`,
+      `  return f();`,
+      `}`,
+    );
     shapes.add("type-position");
     notes.push("type-position");
   }
@@ -241,6 +268,7 @@ function buildClassUse(
   random: Random,
   shapes: Set<Shape>,
   notes: string[],
+  counted: { usages: number },
 ): void {
   const lines = [`import { ${name} } from "${entry}";`, ""];
 
@@ -255,6 +283,9 @@ function buildClassUse(
     `  return new ${name}("x");`,
     `}`,
   );
+  // The `new`, which is a usage; the return annotation beside it is a type position and
+  // is not.
+  counted.usages += 1;
   shapes.add("type-position");
 
   // Exactly one of the two subclass shapes, never both: they are the two halves of the
@@ -268,10 +299,14 @@ function buildClassUse(
       `  }`,
       `}`,
     );
+    // The `super()` call. The clause itself is filtered in this half of the rule.
+    counted.usages += 1;
     shapes.add("subclass-with-constructor");
     notes.push("subclass-with-constructor");
   } else {
     lines.push(``, `export class NoCtor extends ${name} {}`);
+    // The clause itself, reported as the implicit construction.
+    counted.usages += 1;
     shapes.add("subclass-without-constructor");
     notes.push("subclass-without-constructor");
   }

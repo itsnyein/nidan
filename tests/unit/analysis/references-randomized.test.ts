@@ -65,6 +65,7 @@ interface Outcome {
   readonly diagnostics: readonly string[];
   readonly occurrences: number;
   readonly seeds: number;
+  readonly usages: number;
 }
 
 /**
@@ -194,6 +195,7 @@ async function analyseRepo(repo: {
     }),
     occurrences: occurrences.length,
     seeds: seeds.seeds.length,
+    usages: result.usages.length,
   };
 }
 
@@ -236,6 +238,13 @@ describe.skipIf(!RANDOMIZED)("generated reference cases", () => {
         // The invariant has to have had something to check. A case producing no seed, or
         // no occurrence of its name, satisfies "nothing unexplained" vacuously.
         expect(outcome.seeds, `no seed\n  ${where}`).toBeGreaterThan(0);
+        // Counted from what the generator **built**, never from what nidan reported. This
+        // is the only check here that catches over-reporting precisely: the differential
+        // invariant cannot see an extra usage, because an extra usage explains its own
+        // occurrence.
+        expect(outcome.usages, `usage count\n  ${where}`).toBe(
+          generated.expectedUsages,
+        );
         expect(
           outcome.occurrences,
           `no occurrences\n  ${where}`,

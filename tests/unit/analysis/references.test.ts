@@ -97,7 +97,6 @@ async function analyze(repoPath: string): Promise<Outcome> {
  * there are none, and an absent key asserts nothing. Treating the two the same would
  * either drop the five fixtures that freeze an empty list — the ones that catch
  * *over*-reporting — or demand an expectation from eleven records that never made one.
- * `relation` is not asserted here; classification is a later change.
  */
 function expectedUsages(name: string): string[] | undefined {
   const raw = readFileSync(
@@ -111,6 +110,7 @@ function expectedUsages(name: string): string[] | undefined {
       seeds?: Array<{
         key: string;
         usages?: Array<{
+          relation: string;
           from: string;
           site: { file: string; line: number };
           resolution: { status: string };
@@ -125,7 +125,7 @@ function expectedUsages(name: string): string[] | undefined {
     .flatMap((seed) =>
       (seed.usages ?? []).map(
         (usage) =>
-          `${seed.key} | ${usage.from} | ${usage.site.file}:${String(usage.site.line)} | ${usage.resolution.status}`,
+          `${seed.key} | ${usage.relation} | ${usage.from} | ${usage.site.file}:${String(usage.site.line)} | ${usage.resolution.status}`,
       ),
     )
     .sort();
@@ -135,47 +135,10 @@ function actualUsages(result: ReferenceResult): string[] {
   return result.usages
     .map(
       (usage) =>
-        `${usage.seedKey} | ${usage.from} | ${usage.filePath}:${String(usage.line)} | ${usage.resolution.status}`,
+        `${usage.seedKey} | ${usage.relation} | ${usage.from} | ${usage.filePath}:${String(usage.line)} | ${usage.resolution.status}`,
     )
     .sort();
 }
-
-/**
- * Fixtures whose usage expectation states a ruling that is **not yet implemented**.
- *
- * Each entry is asserted to **fail** below, not skipped. A skip-list could hide a genuine
- * regression and would outlive its fix silently; asserting the current wrong behaviour
- * means the day the ruling lands, the `still` test fails and forces the entry out.
- */
-const PENDING_USAGES = new Map<string, string>([
-  [
-    "usage-constructor-implicit",
-    "the implicit-constructor heritage ruling is not implemented: the clause is reported as undecided rather than as a construct usage",
-  ],
-]);
-
-describe("rulings not yet implemented", () => {
-  it.each([...PENDING_USAGES])(
-    "%s still reports no usage at all",
-    async (name) => {
-      const outcome = await analyze(join("tests", "fixtures", name));
-
-      // The current behaviour, stated exactly. When the ruling lands this fails, which
-      // is the point: the entry cannot survive its own fix.
-      expect(actualUsages(outcome.result)).toEqual([]);
-      expect(
-        outcome.result.undecided.map(
-          (reference) =>
-            `${reference.reason} ${reference.filePath}:${String(reference.line)}`,
-        ),
-      ).toEqual(["implicit-constructor-heritage src/plain.ts:3"]);
-      // And the record it will be held to is not empty, so this is pending work rather
-      // than a fixture that expects nothing.
-      expect(expectedUsages(name)?.length).toBe(1);
-    },
-    TIMEOUT_MS,
-  );
-});
 
 describe("usages against the frozen fixtures", () => {
   // **Every** fixture, not only the ones whose records declare a usage. Keying on record
@@ -184,9 +147,7 @@ describe("usages against the frozen fixtures", () => {
   // "has at least one usage" removed exactly those from the check. A record that empties
   // itself would also have deleted its own assertion.
   const names = allFixtures();
-  const declaring = names
-    .filter((name) => expectedUsages(name) !== undefined)
-    .filter((name) => !PENDING_USAGES.has(name));
+  const declaring = names.filter((name) => expectedUsages(name) !== undefined);
 
   it("includes the fixtures that freeze an empty usage list", () => {
     // The property the enumeration exists for, asserted rather than assumed. A fixture
@@ -259,10 +220,89 @@ describe("the four equivalence variants agree", () => {
       for (const variant of normalized) expect(variant).toEqual(first);
       // Compared against the expectation too, so four identical wrong answers fail.
       expect(first).toEqual([
-        "src/greet.EXT :: :: function :: greet | src/use.EXT :: :: function :: report | src/use.EXT:4 | exact",
+        "src/greet.EXT :: :: function :: greet | invoke | src/use.EXT :: :: function :: report | src/use.EXT:4 | exact",
       ]);
     },
     TIMEOUT_MS * 4,
+  );
+});
+
+describe("a reference reached through a property access", () => {
+  it(
+    "reports a member call as invoke rather than as a value reference",
+    async () => {
+      // The shape the name claims: the reference the compiler returns is the identifier
+      // `send`, whose parent is the **property access**, not the call. Classifying from
+      // that parent alone reads every member call as a value reference, and no frozen
+      // fixture calls a method through a receiver — so deleting the walk to the
+      // outermost access leaves the whole suite green. This is the test that notices.
+      const base = {
+        "src/client.ts":
+          "export class Client {\n  send(body: string): string {\n    return body;\n  }\n}\n",
+        "src/use.ts":
+          'import { Client } from "./client.js";\n\nexport function post(client: Client): string {\n  return client.send("x");\n}\n',
+      };
+      const outcome = await analyze(
+        await throwawayCase({
+          base,
+          head: {
+            ...base,
+            "src/client.ts":
+              "export class Client {\n  send(body: string): string {\n    return body.trim();\n  }\n}\n",
+          },
+        }),
+      );
+
+      expect(
+        outcome.result.usages.map(
+          (usage) =>
+            `${usage.relation} ${usage.filePath}:${String(usage.line)} from ${usage.from}`,
+        ),
+      ).toEqual(["invoke src/use.ts:4 from src/use.ts :: :: function :: post"]);
+      expect(unexplainedOf(outcome.occurrences)).toEqual([]);
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "reports a member JSX tag as jsx-render rather than as a value reference",
+    async () => {
+      // The second spelling of the same shape, and the reason this is a separate test:
+      // `<UI.Card />` parses as a JSX member expression, which ts-morph happens to
+      // expose as a property access. The member-call test above would not notice if that
+      // ever stopped being true. The frozen `layout-*` fixtures render `<Card />` — a
+      // bare identifier tag, with no property access to walk.
+      const base = {
+        "src/ui.tsx":
+          'import type { JSX } from "tiny-ui";\n\nexport function Card(props: { title: string }): JSX.Element {\n  return <span>{props.title}</span>;\n}\n',
+        "src/app.tsx":
+          'import type { JSX } from "tiny-ui";\nimport * as UI from "./ui.js";\n\nexport function App(): JSX.Element {\n  return <UI.Card title="hello" />;\n}\n',
+      };
+      const outcome = await analyze(
+        await throwawayCase(
+          {
+            base,
+            head: {
+              ...base,
+              "src/ui.tsx":
+                'import type { JSX } from "tiny-ui";\n\nexport function Card(props: { title: string }): JSX.Element {\n  return <span>{props.title.trim()}</span>;\n}\n',
+            },
+          },
+          { jsx: true },
+        ),
+      );
+
+      expect(
+        outcome.result.usages.map(
+          (usage) =>
+            `${usage.relation} ${usage.filePath}:${String(usage.line)} from ${usage.from}`,
+        ),
+      ).toEqual([
+        "jsx-render src/app.tsx:5 from src/app.tsx :: :: function :: App",
+      ]);
+      expect(unexplainedOf(outcome.occurrences)).toEqual([]);
+    },
+    TIMEOUT_MS,
   );
 });
 
@@ -326,7 +366,7 @@ describe("a subclass with no explicit constructor", () => {
   };
 
   it(
-    "surfaces through the differential check instead of being filtered away",
+    "reports its extends clause as an implicit construct usage",
     async () => {
       const outcome = await analyze(
         await throwawayCase({
@@ -340,25 +380,22 @@ describe("a subclass with no explicit constructor", () => {
       );
 
       // `RetryingClient` declares no constructor, so there is no `super()` anywhere to
-      // carry the construction. Filtering the heritage clause here would leave the
-      // construction reported by nothing at all, which the ruling forbids in advance.
+      // carry the construction. The clause itself is the construction.
       expect(
-        outcome.result.undecided.map(
-          (reference) =>
-            `${reference.reason} ${reference.filePath}:${String(reference.line)}`,
+        outcome.result.usages.map(
+          (usage) =>
+            `${usage.relation} ${usage.filePath}:${String(usage.line)} from ${usage.from} implicit=${String(usage.implicit === true)}`,
         ),
-      ).toEqual(["implicit-constructor-heritage src/retry.ts:3"]);
+      ).toEqual([
+        "construct src/retry.ts:3 from src/retry.ts :: RetryingClient :: constructor :: constructor implicit=true",
+      ]);
+      // And the clause is not *also* filtered, which would report the construction twice
+      // if a later change started counting filtered clauses.
       expect(
         outcome.result.filtered.filter(
           (reference) => reference.reason === "heritage-clause",
         ),
       ).toEqual([]);
-      // And it is visible in the differential check rather than merely absent from it.
-      expect(
-        outcome.occurrences
-          .filter((occurrence) => occurrence.explanation.kind === "undecided")
-          .map((occurrence) => occurrence.filePath),
-      ).toEqual(["src/retry.ts"]);
     },
     TIMEOUT_MS,
   );
@@ -426,7 +463,8 @@ describe("a subclass with no explicit constructor", () => {
         }),
       );
 
-      expect(outcome.result.undecided).toEqual([]);
+      // No usage at all from `implements`: it is a type position, not a construction.
+      expect(outcome.result.usages).toEqual([]);
       expect(
         outcome.result.filtered
           .filter((reference) => reference.filePath === "src/fake.ts")
@@ -439,9 +477,10 @@ describe("a subclass with no explicit constructor", () => {
   it(
     "filters the clause once the subclass declares a constructor",
     async () => {
-      // The other half of the rule, on the same shape plus one constructor. Without this,
-      // "undecided" could be the answer for every heritage clause and the first test
-      // would still pass.
+      // The other half of the rule, on the same shape plus one constructor. Without
+      // this, "implicit construct usage" could be the answer for every heritage clause
+      // and the first test would still pass — and the construction would be reported
+      // twice, once at the clause and once at the `super()`.
       const withConstructor = {
         ...CONSTRUCTOR_CASE,
         "src/retry.ts":
@@ -458,7 +497,6 @@ describe("a subclass with no explicit constructor", () => {
         }),
       );
 
-      expect(outcome.result.undecided).toEqual([]);
       expect(
         outcome.result.filtered.filter(
           (reference) => reference.reason === "heritage-clause",
@@ -467,10 +505,10 @@ describe("a subclass with no explicit constructor", () => {
       expect(
         outcome.result.usages.map(
           (usage) =>
-            `${usage.filePath}:${String(usage.line)} from ${usage.from}`,
+            `${usage.relation} ${usage.filePath}:${String(usage.line)} from ${usage.from} implicit=${String(usage.implicit === true)}`,
         ),
       ).toEqual([
-        "src/retry.ts:5 from src/retry.ts :: RetryingClient :: constructor :: constructor",
+        "construct src/retry.ts:5 from src/retry.ts :: RetryingClient :: constructor :: constructor implicit=false",
       ]);
     },
     TIMEOUT_MS,
@@ -590,11 +628,100 @@ describe("the differential check can fail", () => {
         outcome.explain({ ...outcome.result, usages: [] }),
       );
 
+      // Two, not one. Dropping every usage drops the `super()` as well, so the `extends`
+      // clause loses its explanation too — the tripwire and the occurrence check are
+      // independent, and this mutation trips both.
+      expect(
+        unexplained
+          .map(
+            (occurrence) => `${occurrence.filePath}:${String(occurrence.line)}`,
+          )
+          .sort(),
+      ).toEqual(["src/retry.ts:3", "src/use.ts:4"]);
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "turns a lost super() detection into an unexplained extends clause",
+    async () => {
+      // The blind spot this tripwire closes. A `super()` site contains no textual
+      // occurrence of the class name, so dropping `super()` detection is invisible to an
+      // occurrence-based harness. The `extends` clause does carry the name, and being
+      // *filtered* must not count as explaining it — that the clause was filtered says
+      // nothing about whether the `super()` it delegates to was found.
+      const base = {
+        "src/client.ts":
+          "export class Client {\n  constructor(readonly url: string) {}\n}\n",
+        "src/retry.ts":
+          'import { Client } from "./client.js";\n\nexport class RetryingClient extends Client {\n  constructor(url: string) {\n    super(url);\n  }\n}\n',
+      };
+      const outcome = await analyze(
+        await throwawayCase({
+          base,
+          head: {
+            ...base,
+            "src/client.ts":
+              'export class Client {\n  constructor(readonly url: string) {\n    if (url === "") throw new Error("url is required");\n  }\n}\n',
+          },
+        }),
+      );
+      expect(unexplainedOf(outcome.occurrences)).toEqual([]);
+
+      // Drop only the `super()` usage, leaving the filtered clause exactly as it was.
+      const withoutSuper = {
+        ...outcome.result,
+        usages: outcome.result.usages.filter(
+          (usage) => usage.filePath !== "src/retry.ts",
+        ),
+      };
+      const unexplained = unexplainedOf(outcome.explain(withoutSuper));
+
       expect(
         unexplained.map(
           (occurrence) => `${occurrence.filePath}:${String(occurrence.line)}`,
         ),
-      ).toEqual(["src/use.ts:4"]);
+      ).toEqual(["src/retry.ts:3"]);
+      expect(unexplained[0]?.explanation).toMatchObject({
+        why: "an extends clause whose subclass constructor reported no super() usage",
+      });
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "turns a lost implicit construct usage into an unexplained extends clause",
+    async () => {
+      // The other half: with no constructor there is no `super()` to lose, so the only
+      // thing that can explain the clause is the implicit usage at it.
+      const base = {
+        "src/client.ts":
+          "export class Client {\n  constructor(readonly url: string) {}\n}\n",
+        "src/plain.ts":
+          'import { Client } from "./client.js";\n\nexport class PlainClient extends Client {}\n',
+      };
+      const outcome = await analyze(
+        await throwawayCase({
+          base,
+          head: {
+            ...base,
+            "src/client.ts":
+              'export class Client {\n  constructor(readonly url: string) {\n    if (url === "") throw new Error("url is required");\n  }\n}\n',
+          },
+        }),
+      );
+      expect(unexplainedOf(outcome.occurrences)).toEqual([]);
+
+      const unexplained = unexplainedOf(
+        outcome.explain({ ...outcome.result, usages: [] }),
+      );
+
+      expect(unexplained.map((o) => `${o.filePath}:${String(o.line)}`)).toEqual(
+        ["src/plain.ts:3"],
+      );
+      expect(unexplained[0]?.explanation).toMatchObject({
+        why: "a subclass with no constructor, and no implicit construct usage reported for its extends clause",
+      });
     },
     TIMEOUT_MS,
   );
@@ -634,12 +761,20 @@ describe("the differential check can fail", () => {
   );
 });
 
-async function throwawayCase(files: {
-  base: Record<string, string>;
-  head: Record<string, string>;
-}): Promise<string> {
+async function throwawayCase(
+  files: {
+    base: Record<string, string>;
+    head: Record<string, string>;
+  },
+  // A `.tsx` case needs the compiler option and a JSX runtime to resolve against:
+  // without them every tag is an error and the references come from a program that did
+  // not type-check, which is not the thing the test means to measure. The shim mirrors
+  // the one the `layout-*` fixtures use, so the two agree on what a working JSX case is.
+  options: { jsx?: boolean } = {},
+): Promise<string> {
   const caseDir = await mkdtemp(join(tmpdir(), "nidan-references-"));
   cleanups.push(() => rm(caseDir, { recursive: true, force: true }));
+  if (options.jsx === true) await writeJsxShim(caseDir);
   for (const [snapshot, entries] of Object.entries(files)) {
     await mkdir(join(caseDir, snapshot), { recursive: true });
     await writeFile(
@@ -652,6 +787,9 @@ async function throwawayCase(files: {
             moduleResolution: "NodeNext",
             strict: true,
             noEmit: true,
+            ...(options.jsx === true
+              ? { jsx: "react-jsx", jsxImportSource: "tiny-ui" }
+              : {}),
           },
           include: ["src"],
         },
@@ -673,4 +811,44 @@ async function throwawayCase(files: {
     throw new Error("throwaway case is missing its head snapshot");
   }
   return caseDir;
+}
+
+/**
+ * The smallest JSX runtime a `.tsx` case can type-check against.
+ *
+ * At the case root rather than inside a snapshot, because both snapshots resolve against
+ * the same installed dependency — the same arrangement the `layout-*` fixtures freeze.
+ */
+async function writeJsxShim(caseDir: string): Promise<void> {
+  const shim = join(caseDir, "node_modules", "tiny-ui");
+  await mkdir(shim, { recursive: true });
+  await writeFile(
+    join(shim, "package.json"),
+    `${JSON.stringify(
+      {
+        name: "tiny-ui",
+        version: "1.0.0",
+        types: "./index.d.ts",
+        exports: {
+          ".": { types: "./index.d.ts" },
+          "./jsx-runtime": { types: "./jsx-runtime.d.ts" },
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  await writeFile(
+    join(shim, "jsx-runtime.d.ts"),
+    "export namespace JSX {\n" +
+      "  interface Element {\n    readonly rendered: unique symbol;\n  }\n" +
+      "  interface IntrinsicElements {\n    [name: string]: unknown;\n  }\n}\n" +
+      "export declare function jsx(type: unknown, props: unknown): JSX.Element;\n" +
+      "export declare function jsxs(type: unknown, props: unknown): JSX.Element;\n" +
+      "export declare const Fragment: unique symbol;\n",
+  );
+  await writeFile(
+    join(shim, "index.d.ts"),
+    'export type { JSX } from "./jsx-runtime.js";\n',
+  );
 }

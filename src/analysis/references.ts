@@ -5,7 +5,11 @@ import {
   type SourceFile,
 } from "ts-morph";
 
-import type { Callable, CallableIndex } from "./identity.js";
+import {
+  constructorKeyFor,
+  type Callable,
+  type CallableIndex,
+} from "./identity.js";
 import type { Seed, Snapshot } from "./seeds.js";
 
 /**
@@ -23,8 +27,15 @@ export type FilterReason =
   | "type-only"
   | "heritage-clause";
 
-/** A reference whose classification is not yet ruled on, and so is reported as neither. */
-export type UndecidedReason = "implicit-constructor-heritage";
+/**
+ * What the reference does with the seed (§6.2).
+ *
+ * `value-reference` is the residue: a reference that survives the filters and is neither
+ * a call, a construction, nor a JSX tag. The relation label is settled here; the separate
+ * `valueReferences` projection and the wrapper/CommonJS pattern list are later work.
+ */
+export type Relation =
+  "invoke" | "construct" | "jsx-render" | "value-reference";
 
 export interface UsageResolution {
   readonly status: "exact" | "ambiguous";
@@ -40,9 +51,17 @@ export interface ReferenceSite {
 
 export interface Usage extends ReferenceSite {
   readonly seedKey: string;
+  readonly relation: Relation;
   /** The enclosing supported callable's key, or `<path> :: module` for top-level code. */
   readonly from: string;
   readonly resolution: UsageResolution;
+  /**
+   * Set when the construction has no call expression to point at — a subclass with no
+   * explicit constructor, whose `extends` clause *is* the construction. The site is a
+   * declaration, so a reader following it lands on `extends Base` rather than on
+   * something that looks like a call.
+   */
+  readonly implicit?: true;
 }
 
 export interface FilteredReference extends ReferenceSite {
@@ -50,22 +69,9 @@ export interface FilteredReference extends ReferenceSite {
   readonly reason: FilterReason;
 }
 
-export interface UndecidedReference extends ReferenceSite {
-  readonly seedKey: string;
-  readonly reason: UndecidedReason;
-}
-
 export interface ReferenceResult {
   readonly usages: readonly Usage[];
   readonly filtered: readonly FilteredReference[];
-  /**
-   * References deliberately left unclassified, pending a ruling.
-   *
-   * Separate from both other buckets on purpose. Putting them in `filtered` would freeze
-   * an answer nobody has given; dropping them would make a construction that no `super()`
-   * call reports disappear entirely, which is the one outcome ruled out in advance.
-   */
-  readonly undecided: readonly UndecidedReference[];
 }
 
 export interface SnapshotReferences {
@@ -89,7 +95,6 @@ export interface FindUsagesInput {
 export function findUsages(input: FindUsagesInput): ReferenceResult {
   const usages: Usage[] = [];
   const filtered: FilteredReference[] = [];
-  const undecided: UndecidedReference[] = [];
 
   for (const seed of input.seeds) {
     const snapshot = snapshotFor(seed.snapshot, input);
@@ -104,21 +109,18 @@ export function findUsages(input: FindUsagesInput): ReferenceResult {
     collectForSeed(seed, callable, snapshot, input.repoRoot, {
       usages,
       filtered,
-      undecided,
     });
   }
 
   return {
     usages: usages.sort(compareSites),
     filtered: filtered.sort(compareSites),
-    undecided: undecided.sort(compareSites),
   };
 }
 
 interface Buckets {
   readonly usages: Usage[];
   readonly filtered: FilteredReference[];
-  readonly undecided: UndecidedReference[];
 }
 
 function snapshotFor(
@@ -166,6 +168,7 @@ function collectForSeed(
 
       buckets.usages.push({
         seedKey: seed.key,
+        relation: relationOf(node),
         from: fromOf(node, snapshot, site.filePath),
         resolution,
         ...site,
@@ -200,7 +203,7 @@ function nameNodeOf(node: Node): ReferenceSearchNode | undefined {
   if (!Node.hasName(node)) return undefined;
   const nameNode = node.getNameNode();
   // An anonymous default export has no name node to search from; its references are
-  // reached through the export assignment, which is M4's `value-reference` work.
+  // reached through the export assignment, which the value-reference projection covers.
   return Node.isReferenceFindable(nameNode) ? nameNode : undefined;
 }
 
@@ -225,6 +228,10 @@ function filterReasonFor(
   // reported the alias as a call site, against the approved `identity-default-exports`
   // record, which freezes no usages for it: §7.2 calls the default export an alias, and
   // using a callable as a value belongs to `valueReferences`, not here.
+  // Shadowed by the declaration rule below for *filtering* — an export specifier is one
+  // of its own symbol's declarations — and kept because it supplies the reported reason.
+  // Do not remove it: the differential harness asserts the reason, not merely that the
+  // reference was filtered.
   if (Node.isExportSpecifier(parent) || Node.isExportAssignment(parent)) {
     return "export-specifier";
   }
@@ -297,11 +304,18 @@ function isTypeOnlyPosition(node: Node): boolean {
 }
 
 /**
- * A heritage clause is filtered when the subclass has an explicit constructor, because
- * that constructor's `super()` call reports the construction and counting both would
- * report it twice. The implicit-constructor case is **not ruled on**, so it goes to
- * `undecided` rather than quietly into either answer: with no `super()` in the source,
- * filtering it would leave the construction reported by nothing at all.
+ * The two halves of the heritage rule, which are exclusive, so a construction is reported
+ * exactly once either way.
+ *
+ * **With an explicit constructor** the clause is a filtered non-usage and that
+ * constructor's `super()` call carries the construction; counting both would report one
+ * construction twice.
+ *
+ * **Without one** there is no `super()` anywhere in the source, so the clause *is* the
+ * construction: filtering it would leave the construction reported by nothing at all.
+ * `from` names the constructor the class would have — it has none to point at, and naming
+ * the class instead would make this usage's `from` a different kind of thing from every
+ * other usage's.
  */
 function classifyHeritageClause(
   node: Node,
@@ -329,9 +343,17 @@ function classifyHeritageClause(
       : undefined;
 
   if (constructor === undefined) {
-    buckets.undecided.push({
+    const from =
+      subclass === undefined
+        ? `${site.filePath} :: module`
+        : (constructorKeyFor(subclass, site.filePath) ??
+          `${site.filePath} :: module`);
+    buckets.usages.push({
       seedKey: seed.key,
-      reason: "implicit-constructor-heritage",
+      relation: "construct",
+      from,
+      resolution,
+      implicit: true,
       ...site,
     });
     return;
@@ -355,6 +377,7 @@ function classifyHeritageClause(
     const superSite = siteOf(call.getExpression(), repoRoot);
     buckets.usages.push({
       seedKey: seed.key,
+      relation: "construct",
       from: fromOf(call, snapshot, superSite.filePath),
       resolution,
       ...superSite,
@@ -370,6 +393,55 @@ function ownerConstructorOf(call: Node): Node | undefined {
       Node.isClassDeclaration(ancestor) ||
       Node.isClassExpression(ancestor),
   );
+}
+
+/**
+ * What the reference does with the seed (§6.2).
+ *
+ * Decided from the reference node's position, not from the symbol: the same symbol is
+ * invoked in one place, passed as a value in another, and rendered in a third.
+ */
+function relationOf(node: Node): Relation {
+  const target = outermostAccess(node);
+  const parent = target.getParent();
+  if (parent === undefined) return "value-reference";
+
+  // `getExpression() === target` matters: in `fn(other)` the identifier `other` is an
+  // *argument* of a call, not its callee, and testing only "is inside a call" would
+  // report every argument as an invocation.
+  if (Node.isCallExpression(parent) && parent.getExpression() === target) {
+    return "invoke";
+  }
+  if (Node.isNewExpression(parent) && parent.getExpression() === target) {
+    return "construct";
+  }
+  if (Node.isJsxTagNamed(parent) && parent.getTagNameNode() === target) {
+    return "jsx-render";
+  }
+
+  return "value-reference";
+}
+
+/**
+ * The outermost property access the reference is the name of.
+ *
+ * `obj.method()` reaches here as the identifier `method`, whose parent is the property
+ * access rather than the call; without this step every member call would classify as a
+ * value reference. `<UI.Card />` is the same shape with a JSX tag.
+ */
+function outermostAccess(node: Node): Node {
+  let current = node;
+  for (;;) {
+    const parent = current.getParent();
+    if (parent === undefined) return current;
+    // `<UI.Card />` parses its tag as a JSX member expression, which ts-morph exposes as
+    // a property access; one test covers both spellings.
+    const isNamedPart =
+      Node.isPropertyAccessExpression(parent) &&
+      parent.getNameNode() === current;
+    if (!isNamedPart) return current;
+    current = parent;
+  }
 }
 
 /** The enclosing supported callable, or the module node (§9). */
