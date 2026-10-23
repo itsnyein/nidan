@@ -20,6 +20,7 @@ import {
   type Occurrence,
 } from "../../helpers/differential.js";
 import { allFixtures } from "../../helpers/fixture-gaps.js";
+import { JSX_COMPILER_OPTIONS, writeJsxShim } from "../../helpers/jsx-shim.js";
 import { createFixtureRepo } from "../../helpers/fixture-repo.js";
 
 const TIMEOUT_MS = 60_000;
@@ -864,9 +865,7 @@ async function throwawayCase(
             moduleResolution: "NodeNext",
             strict: true,
             noEmit: true,
-            ...(options.jsx === true
-              ? { jsx: "react-jsx", jsxImportSource: "tiny-ui" }
-              : {}),
+            ...(options.jsx === true ? JSX_COMPILER_OPTIONS : {}),
           },
           include: ["src"],
         },
@@ -888,44 +887,4 @@ async function throwawayCase(
     throw new Error("throwaway case is missing its head snapshot");
   }
   return caseDir;
-}
-
-/**
- * The smallest JSX runtime a `.tsx` case can type-check against.
- *
- * At the case root rather than inside a snapshot, because both snapshots resolve against
- * the same installed dependency — the same arrangement the `layout-*` fixtures freeze.
- */
-async function writeJsxShim(caseDir: string): Promise<void> {
-  const shim = join(caseDir, "node_modules", "tiny-ui");
-  await mkdir(shim, { recursive: true });
-  await writeFile(
-    join(shim, "package.json"),
-    `${JSON.stringify(
-      {
-        name: "tiny-ui",
-        version: "1.0.0",
-        types: "./index.d.ts",
-        exports: {
-          ".": { types: "./index.d.ts" },
-          "./jsx-runtime": { types: "./jsx-runtime.d.ts" },
-        },
-      },
-      null,
-      2,
-    )}\n`,
-  );
-  await writeFile(
-    join(shim, "jsx-runtime.d.ts"),
-    "export namespace JSX {\n" +
-      "  interface Element {\n    readonly rendered: unique symbol;\n  }\n" +
-      "  interface IntrinsicElements {\n    [name: string]: unknown;\n  }\n}\n" +
-      "export declare function jsx(type: unknown, props: unknown): JSX.Element;\n" +
-      "export declare function jsxs(type: unknown, props: unknown): JSX.Element;\n" +
-      "export declare const Fragment: unique symbol;\n",
-  );
-  await writeFile(
-    join(shim, "index.d.ts"),
-    'export type { JSX } from "./jsx-runtime.js";\n',
-  );
 }
