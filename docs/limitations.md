@@ -34,6 +34,14 @@ Specifically, `.call()`, `.apply()`, `.bind()`, unions of callable types, and da
 
 `import()` and `require()` with a non-literal argument cannot be resolved statically. They produce `dynamic-import` and `dynamic-require` gaps.
 
+### Computed member access is not resolved
+
+`obj["method"]()` — a **string-literal** key — is an ordinary member call. It names the same member as `obj.method()`, so nidan reports it as an `invoke` usage with `exact` resolution.
+
+A key that is anything else is not resolved. `obj[name]()`, `obj[key + suffix]()`, and a template-literal key name no particular member at compile time, so nidan does not attribute them to any callable. These produce **no usage and no gap**: there is no reference to report, rather than one that could not be resolved. It is the same category as runtime reflection in the [coverage statement](#coverage-statement) — a dynamic dependency nidan does not claim to detect.
+
+The practical consequence: if a changed method is only ever reached through a computed key, nidan reports it as having no usages. Treat a dispatch table keyed by variable as outside what the report covers.
+
 ### Untyped receivers are not resolved
 
 A member call on a receiver typed `any`, or one whose type cannot be resolved, cannot be attributed to a specific symbol. When the called member matches a seed name, nidan reports an `untyped-member-call` gap.

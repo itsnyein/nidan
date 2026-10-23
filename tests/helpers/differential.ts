@@ -162,11 +162,21 @@ function explain(
   }
 
   const node = sourceFile.getDescendantAtPos(pos);
-  // Positions inside trivia have no descendant, and a literal's text is not an
-  // identifier: both are occurrences of the characters, not of the symbol.
-  if (node === undefined || !Node.isIdentifier(node)) {
-    return { kind: "comment-or-string" };
+  // Positions inside trivia have no descendant: an occurrence of the characters only.
+  if (node === undefined) return { kind: "comment-or-string" };
+
+  // Ahead of the literal rule below, and for the same reason the heritage tripwire is
+  // ahead of `filtered`. A string literal that keys an element access **is** a reference,
+  // so answering `comment-or-string` for it would absorb a lost usage: the occurrence
+  // would still look accounted for while nothing reported the call.
+  if (Node.isStringLiteral(node)) {
+    const key = elementAccessKeyVerdict(node, filePath, callable, input);
+    if (key !== undefined) return key;
   }
+
+  // A literal's text is not an identifier: an occurrence of the characters, not of the
+  // symbol.
+  if (!Node.isIdentifier(node)) return { kind: "comment-or-string" };
 
   const declarations = resolvedDeclarationsOf(node);
   if (declarations.length === 0) {
@@ -219,6 +229,59 @@ function resolvedDeclarationsOf(node: Node): Node[] {
   }
 
   return declarations;
+}
+
+/**
+ * The `obj["method"]()` tripwire, or `undefined` when the literal is ordinary text.
+ *
+ * The occurrence scan works on source text, so it finds the seed's name **inside** the
+ * quotes, one character past where the reference node starts. The usage records the node,
+ * so the two positions never match and the plain lookup misses — which is why this
+ * compares by the literal's own start rather than by the occurrence position.
+ *
+ * Returning `undefined` means "not an element-access key": an ordinary string that merely
+ * contains the name, which the caller is right to treat as text.
+ */
+function elementAccessKeyVerdict(
+  literal: Node,
+  filePath: string,
+  callable: Callable,
+  input: DifferentialInput,
+): Explanation | undefined {
+  const parent = literal.getParent();
+  if (
+    parent === undefined ||
+    !Node.isElementAccessExpression(parent) ||
+    parent.getArgumentExpression() !== literal
+  ) {
+    return undefined;
+  }
+
+  // Resolved from the **literal**, which is where the compiler puts the member symbol
+  // for a literal key. The enclosing element access has no symbol of its own, so
+  // resolving from it finds nothing and every key reads as ordinary text.
+  const declarations = resolvedDeclarationsOf(literal);
+  if (
+    !declarations.some((declaration) =>
+      isInsideTarget(declaration, callable, input.repoRoot),
+    )
+  ) {
+    // A key that addresses some other member. Not this seed, and not text either.
+    return declarations.length === 0 ? undefined : { kind: "different-symbol" };
+  }
+
+  const start = literal.getStart();
+  if (input.result.usages.some(at(filePath, start))) return { kind: "usage" };
+
+  const filtered = input.result.filtered.find(at(filePath, start));
+  if (filtered !== undefined) {
+    return { kind: "filtered", reason: filtered.reason };
+  }
+
+  return {
+    kind: "unexplained",
+    why: "a string-literal element access that resolves to the seed, which discovery neither reported nor filtered",
+  };
 }
 
 /**

@@ -140,57 +140,6 @@ function actualUsages(result: ReferenceResult): string[] {
     .sort();
 }
 
-/**
- * Fixtures whose record states a ruling that is **not yet implemented**.
- *
- * Each entry is asserted to **fail** below, not skipped. A skip-list could hide a genuine
- * regression and would outlive its fix silently; asserting the current wrong behaviour
- * means the day the ruling lands, the `still` test fails and forces the entry out.
- */
-const PENDING_USAGES = new Map<string, string>([
-  [
-    "usage-member-calls",
-    'the element-access ruling is not implemented: client["send"](…) is classified from its parent chain, which holds an element access rather than a call, so it falls through to the residue relation',
-  ],
-]);
-
-describe("rulings not yet implemented", () => {
-  it.each([...PENDING_USAGES])(
-    "%s still reports the element-access call as a value reference",
-    async (name) => {
-      const outcome = await analyze(join("tests", "fixtures", name));
-
-      // The current behaviour, stated exactly. When the ruling lands this fails, which
-      // is the point: the entry cannot survive its own fix.
-      expect(actualUsages(outcome.result)).toEqual([
-        "src/client.ts :: Client :: method :: describe :: static | invoke | src/use.ts :: :: function :: report | src/use.ts:6 | exact",
-        "src/client.ts :: Client :: method :: send | invoke | src/use.ts :: :: function :: report | src/use.ts:4 | exact",
-        "src/client.ts :: Client :: method :: send | value-reference | src/use.ts :: :: function :: report | src/use.ts:5 | exact",
-      ]);
-      // Exactly one line of the record is unmet — the element access. The other two
-      // spellings already agree, so this cannot be read as "classification is broken".
-      const unmet = (expectedUsages(name) ?? []).filter(
-        (line) => !actualUsages(outcome.result).includes(line),
-      );
-      expect(unmet).toEqual([
-        "src/client.ts :: Client :: method :: send | invoke | src/use.ts :: :: function :: report | src/use.ts:5 | exact",
-      ]);
-      // And the harness currently absorbs that site as text rather than as a reference,
-      // which is the second half of what the ruling has to fix.
-      expect(
-        outcome.occurrences
-          .filter((occurrence) => occurrence.filePath === "src/use.ts")
-          .map(
-            (occurrence) =>
-              `${String(occurrence.line)} ${occurrence.explanation.kind}`,
-          )
-          .sort(),
-      ).toEqual(["4 usage", "5 comment-or-string", "6 usage"]);
-    },
-    TIMEOUT_MS,
-  );
-});
-
 describe("usages against the frozen fixtures", () => {
   // **Every** fixture, not only the ones whose records declare a usage. Keying on record
   // content is the defect this repository has already paid for twice: a fixture that
@@ -198,9 +147,7 @@ describe("usages against the frozen fixtures", () => {
   // "has at least one usage" removed exactly those from the check. A record that empties
   // itself would also have deleted its own assertion.
   const names = allFixtures();
-  const declaring = names
-    .filter((name) => expectedUsages(name) !== undefined)
-    .filter((name) => !PENDING_USAGES.has(name));
+  const declaring = names.filter((name) => expectedUsages(name) !== undefined);
 
   it("includes the fixtures that freeze an empty usage list", () => {
     // The property the enumeration exists for, asserted rather than assumed. A fixture
@@ -277,6 +224,83 @@ describe("the four equivalence variants agree", () => {
       ]);
     },
     TIMEOUT_MS * 4,
+  );
+});
+
+describe("a call through a string-literal element access", () => {
+  // One class, one method, and three strings reading `send` — only one of which keys an
+  // element access. The other two are what separate "is an element-access key" from
+  // "contains the name", which a rule keyed on the text alone could not tell apart.
+  const BASE = {
+    "src/client.ts":
+      "export class Client {\n  send(body: string): string {\n    return body;\n  }\n}\n",
+    "src/use.ts":
+      'import { Client } from "./client.js";\n\nexport function post(client: Client): string {\n  const label = "send";\n  return client["send"](label) + "send";\n}\n',
+  };
+  const HEAD = {
+    ...BASE,
+    "src/client.ts":
+      "export class Client {\n  send(body: string): string {\n    return body.trim();\n  }\n}\n",
+  };
+
+  it(
+    "classifies it as invoke, and leaves the two ordinary strings as text",
+    async () => {
+      // The input reaches the named case because the reference the compiler returns for
+      // `client["send"](label)` is the **string literal**, whose parent is an element
+      // access rather than a call — the one reference shape that arrives as a literal.
+      // Lines 4 and 5 also contain `send` inside quotes and key nothing, so a rule that
+      // matched on quoted text would report three usages here instead of one.
+      const outcome = await analyze(
+        await throwawayCase({ base: BASE, head: HEAD }),
+      );
+
+      expect(
+        outcome.result.usages.map(
+          (usage) =>
+            `${usage.relation} ${usage.filePath}:${String(usage.line)} from ${usage.from}`,
+        ),
+      ).toEqual(["invoke src/use.ts:5 from src/use.ts :: :: function :: post"]);
+      expect(unexplainedOf(outcome.occurrences)).toEqual([]);
+      // The two non-keys stay text. Asserting the kind, not merely the absence of a
+      // usage: a rule that called them `different-symbol` would also report no usage.
+      expect(
+        outcome.occurrences
+          .filter((occurrence) => occurrence.explanation.kind !== "usage")
+          .filter((occurrence) => occurrence.filePath === "src/use.ts")
+          .map((occurrence) => occurrence.explanation.kind),
+      ).toEqual(["comment-or-string", "comment-or-string"]);
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "leaves the occurrence unexplained when the usage is lost",
+    async () => {
+      // The half the classification test cannot reach. Before this, the harness resolved
+      // an occurrence by the identifier at that position; a string literal is not one, so
+      // it answered `comment-or-string` — right for a comment, wrong for a reference.
+      // Dropping the usage therefore looked accounted for, exactly as a lost `super()`
+      // once did.
+      const outcome = await analyze(
+        await throwawayCase({ base: BASE, head: HEAD }),
+      );
+      expect(unexplainedOf(outcome.occurrences)).toEqual([]);
+
+      const unexplained = unexplainedOf(
+        outcome.explain({ ...outcome.result, usages: [] }),
+      );
+
+      expect(
+        unexplained.map(
+          (occurrence) => `${occurrence.filePath}:${String(occurrence.line)}`,
+        ),
+      ).toEqual(["src/use.ts:5"]);
+      expect(unexplained[0]?.explanation).toMatchObject({
+        why: "a string-literal element access that resolves to the seed, which discovery neither reported nor filtered",
+      });
+    },
+    TIMEOUT_MS,
   );
 });
 
