@@ -33,5 +33,10 @@ export default defineConfig({
     // test files in parallel workers, and two tsup processes writing the same output
     // leave one file's test executing a half-written binary.
     globalSetup: ["tests/helpers/build-cli.ts"],
+    // Annotates a failing test with CPU against wall time. See the file for why that
+    // number is the one that separates a starved run from a defect.
+    setupFiles: ["tests/helpers/contention.ts"],
+    // `default` is kept: this one adds a diagnosis, it does not replace the report.
+    reporters: ["default", "./tests/helpers/contention-reporter.ts"],
   },
 });
