@@ -833,6 +833,66 @@ describe("a reference that does not resolve to the seed", () => {
 
 describe("the differential check can fail", () => {
   it(
+    "does not let a renamed seed's usage explain the deleted one's",
+    async () => {
+      // The rename shape, which §7.2 makes an ordinary outcome: a rename is a delete plus
+      // an add, so `alpha` (deleted, base) and `bravo` (added, head) are two seeds. The
+      // names are the **same length** on purpose — the call site then sits at the same
+      // offset in the same relative path in both snapshots, which is the only way the two
+      // records can collide.
+      const base = {
+        "src/seed.ts": 'export function alpha(): string {\n  return "a";\n}\n',
+        "src/use.ts":
+          'import { alpha } from "./seed.js";\n\nexport const r = alpha();\n',
+      };
+      const outcome = await analyze(
+        await throwawayCase({
+          base,
+          head: {
+            "src/seed.ts":
+              'export function bravo(): string {\n  return "a";\n}\n',
+            "src/use.ts":
+              'import { bravo } from "./seed.js";\n\nexport const r = bravo();\n',
+          },
+        }),
+      );
+
+      // The shape is what the test claims only if both seeds exist and both call sites
+      // landed on the same line. Asserted, not assumed: a rename that produced one seed,
+      // or offsets that differed, would make the rest of this test vacuous.
+      expect(
+        outcome.seeds.seeds
+          .map((seed) => `${seed.change} ${seed.snapshot}`)
+          .sort(),
+      ).toEqual(["added head", "deleted base"]);
+      const callSites = outcome.result.usages.filter(
+        (usage) => usage.filePath === "src/use.ts",
+      );
+      expect(callSites).toHaveLength(2);
+      expect(new Set(callSites.map((usage) => usage.pos)).size).toBe(1);
+      expect(unexplainedOf(outcome.occurrences)).toEqual([]);
+
+      // Drop only the **deleted** seed's usage. Its occurrence must go unexplained; the
+      // surviving usage belongs to the other seed and may not stand in for it.
+      const withoutDeleted = {
+        ...outcome.result,
+        usages: outcome.result.usages.filter(
+          (usage) => !usage.seedKey.includes("alpha"),
+        ),
+      };
+      const unexplained = unexplainedOf(outcome.explain(withoutDeleted));
+
+      expect(
+        unexplained.map(
+          (occurrence) =>
+            `${occurrence.seedKey.split(" :: ").pop() ?? ""} ${occurrence.filePath}:${String(occurrence.line)}`,
+        ),
+      ).toEqual(["alpha src/use.ts:3"]);
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
     "turns a dropped usage into an unexplained occurrence",
     async () => {
       // The harness's own mutation. Everything else here asserts that nothing is
