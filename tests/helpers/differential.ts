@@ -166,10 +166,16 @@ function explain(
   if (node === undefined) return { kind: "comment-or-string" };
 
   // Ahead of the literal rule below, and for the same reason the heritage tripwire is
-  // ahead of `filtered`. A string literal that keys an element access **is** a reference,
-  // so answering `comment-or-string` for it would absorb a lost usage: the occurrence
-  // would still look accounted for while nothing reported the call.
-  if (Node.isStringLiteral(node)) {
+  // ahead of `filtered`. A literal that keys an element access **is** a reference, so
+  // answering `comment-or-string` for it would absorb a lost usage: the occurrence would
+  // still look accounted for while nothing reported the call.
+  //
+  // Both literal spellings, matching §15b. A template literal with substitutions is a
+  // different node kind and is excluded here by construction.
+  if (
+    Node.isStringLiteral(node) ||
+    Node.isNoSubstitutionTemplateLiteral(node)
+  ) {
     const key = elementAccessKeyVerdict(node, filePath, callable, input);
     if (key !== undefined) return key;
   }
@@ -239,8 +245,8 @@ function resolvedDeclarationsOf(node: Node): Node[] {
  * so the two positions never match and the plain lookup misses — which is why this
  * compares by the literal's own start rather than by the occurrence position.
  *
- * Returning `undefined` means "not an element-access key": an ordinary string that merely
- * contains the name, which the caller is right to treat as text.
+ * Returning `undefined` means "not an element-access key": an ordinary string or template
+ * literal that merely contains the name, which the caller is right to treat as text.
  */
 function elementAccessKeyVerdict(
   literal: Node,

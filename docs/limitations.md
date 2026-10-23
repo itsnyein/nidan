@@ -36,9 +36,9 @@ Specifically, `.call()`, `.apply()`, `.bind()`, unions of callable types, and da
 
 ### Computed member access is not resolved
 
-`obj["method"]()` — a **string-literal** key — is an ordinary member call. It names the same member as `obj.method()`, so nidan reports it as an `invoke` usage with `exact` resolution.
+A key that is a **literal** is an ordinary member call. Both `obj["method"]()` and ``obj[`method`]()`` name the same member as `obj.method()`, so nidan reports each as an `invoke` usage with `exact` resolution.
 
-A key that is anything else is not resolved. `obj[name]()`, `obj[key + suffix]()`, and a template-literal key name no particular member at compile time, so nidan does not attribute them to any callable. These produce **no usage and no gap**: there is no reference to report, rather than one that could not be resolved. It is the same category as runtime reflection in the [coverage statement](#coverage-statement) — a dynamic dependency nidan does not claim to detect.
+A key that is anything else is not resolved. `obj[name]()`, `obj[key + suffix]()`, and a template literal **with substitutions** such as ``obj[`${prefix}method`]()`` name no particular member at compile time, so nidan does not attribute them to any callable. These produce **no usage and no gap**: there is no reference to report, rather than one that could not be resolved. It is the same category as runtime reflection in the [coverage statement](#coverage-statement) — a dynamic dependency nidan does not claim to detect.
 
 The practical consequence: if a changed method is only ever reached through a computed key, nidan reports it as having no usages. Treat a dispatch table keyed by variable as outside what the report covers.
 

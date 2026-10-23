@@ -305,6 +305,77 @@ describe("a call through a string-literal element access", () => {
   );
 });
 
+describe("a call through a template-literal element access", () => {
+  // Three backtick readings of `send`, one per line, and only the first keys an access:
+  // a no-substitution key, a key **with** a substitution, and a plain template string.
+  // The three are what separate the ruling's two halves from each other and from text.
+  const BASE = {
+    "src/client.ts":
+      "export class Client {\n  send(body: string): string {\n    return body;\n  }\n}\n",
+    "src/use.ts":
+      'import { Client } from "./client.js";\n\nexport function post(client: Client, part: string): string {\n  const direct = client[`send`]("a");\n  const computed = client[`${part}send`] as unknown;\n  const note = `send`;\n  return direct + String(computed) + note;\n}\n',
+  };
+  const HEAD = {
+    ...BASE,
+    "src/client.ts":
+      "export class Client {\n  send(body: string): string {\n    return body.trim();\n  }\n}\n",
+  };
+
+  it(
+    "classifies a no-substitution key as invoke and ignores the other two",
+    async () => {
+      // Line 4 is the ruled case: a no-substitution template literal, which the compiler
+      // resolves to the same member a string literal would. Line 5 carries a
+      // substitution, so it is a different node kind naming no member — the compiler
+      // returns no reference for it. Line 6 is a template string that is not a key at
+      // all. Only the first may become a usage.
+      const outcome = await analyze(
+        await throwawayCase({ base: BASE, head: HEAD }),
+      );
+
+      expect(
+        outcome.result.usages.map(
+          (usage) =>
+            `${usage.relation} ${usage.filePath}:${String(usage.line)} ${usage.resolution.status}`,
+        ),
+      ).toEqual(["invoke src/use.ts:4 exact"]);
+      expect(unexplainedOf(outcome.occurrences)).toEqual([]);
+      // The substituted key and the plain template stay text. Asserted by kind, because
+      // reporting them as `different-symbol` would also yield no usage.
+      expect(
+        outcome.occurrences
+          .filter((occurrence) => occurrence.filePath === "src/use.ts")
+          .filter((occurrence) => occurrence.explanation.kind !== "usage")
+          .map((occurrence) => occurrence.explanation.kind),
+      ).toEqual(["comment-or-string", "comment-or-string"]);
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "leaves the occurrence unexplained when the usage is lost",
+    async () => {
+      // The harness half, for the backtick spelling. Without it the tripwire covers only
+      // `"send"` and a lost usage at a backtick key still reads as accounted for.
+      const outcome = await analyze(
+        await throwawayCase({ base: BASE, head: HEAD }),
+      );
+      expect(unexplainedOf(outcome.occurrences)).toEqual([]);
+
+      const unexplained = unexplainedOf(
+        outcome.explain({ ...outcome.result, usages: [] }),
+      );
+
+      expect(
+        unexplained.map(
+          (occurrence) => `${occurrence.filePath}:${String(occurrence.line)}`,
+        ),
+      ).toEqual(["src/use.ts:4"]);
+    },
+    TIMEOUT_MS,
+  );
+});
+
 describe("a reference reached through a property access", () => {
   it(
     "reports a member call as invoke rather than as a value reference",
