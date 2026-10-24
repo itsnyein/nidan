@@ -154,13 +154,59 @@ function actualUsages(result: ReferenceResult): string[] {
  */
 const PENDING_FIXTURES = new Map<
   string,
-  { usages: string[]; unexplained: string[] }
+  {
+    usages: string[];
+    unexplained: string[];
+    /**
+     * Set when the fixture still satisfies the repository-wide unexplained sweep.
+     *
+     * Pending does not always mean exempt. A fixture pinning a gap that does not exist
+     * yet can explain every occurrence perfectly well — the missing gap is an absent
+     * annotation, not a lost reference — and such a fixture must stay in the sweep.
+     * Only a fixture whose references are genuinely unexplained may leave it.
+     */
+    inSweep?: true;
+  }
 >([
   [
     "usage-commonjs-require",
     {
       usages: [],
       unexplained: ["src/use.js:2", "src/use.js:5", "src/use.js:9"],
+    },
+  ],
+  // Dispatch and untyped-receiver gaps are unimplemented. The two dispatch cases already
+  // classify correctly and explain every occurrence — they are pinning an absent gap, not
+  // a miss — so they stay in the repository-wide sweep. Only the untyped case opts out,
+  // because its `any`-receiver call is genuinely unexplained until the gap exists.
+  [
+    "gap-interface-dispatch",
+    {
+      usages: [
+        "src/store.ts :: FileStore :: method :: save | invoke | src/use.ts :: :: function :: persist | src/use.ts:5 | ambiguous",
+        "src/store.ts :: FileStore :: method :: save | invoke | src/use.ts :: :: function :: persistConcrete | src/use.ts:9 | exact",
+      ],
+      unexplained: [],
+      inSweep: true,
+    },
+  ],
+  [
+    "gap-override-dispatch",
+    {
+      usages: [
+        "src/base.ts :: LoudReporter :: method :: render | invoke | src/use.ts :: :: function :: show | src/use.ts:4 | ambiguous",
+      ],
+      unexplained: [],
+      inSweep: true,
+    },
+  ],
+  [
+    "gap-untyped-member-call",
+    {
+      usages: [
+        "src/client.ts :: Client :: method :: send | invoke | src/use.ts :: :: function :: typed | src/use.ts:4 | exact",
+      ],
+      unexplained: ["src/use.ts:8"],
     },
   ],
   [
@@ -240,7 +286,13 @@ describe("usages against the frozen fixtures", () => {
     TIMEOUT_MS,
   );
 
-  it.each(names.filter((name) => !PENDING_FIXTURES.has(name)))(
+  it.each(
+    names.filter(
+      (name) =>
+        PENDING_FIXTURES.get(name)?.inSweep !== undefined ||
+        !PENDING_FIXTURES.has(name),
+    ),
+  )(
     "%s leaves no occurrence of a seed name unexplained",
     async (name) => {
       const outcome = await analyze(join("tests", "fixtures", name));

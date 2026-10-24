@@ -1,0 +1,32 @@
+{
+  "description": "A member call matching the seed name on an any-typed receiver emits an untyped-member-call gap, while the typed call beside it resolves exactly.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/client.ts :: Client :: method :: send",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/use.ts :: :: function :: typed",
+            "site": { "file": "src/use.ts", "line": 4 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": [
+          {
+            "kind": "untyped-member-call",
+            "snapshot": "head",
+            "site": { "file": "src/use.ts", "line": 8 },
+            "expression": "client.send",
+            "relatedSeed": "src/client.ts :: Client :: method :: send",
+            "reasonCode": "any-receiver"
+          }
+        ]
+      }
+    ],
+    "repoWideGaps": []
+  }
+}

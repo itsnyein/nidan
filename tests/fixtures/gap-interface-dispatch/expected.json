@@ -1,0 +1,37 @@
+{
+  "description": "A seed method implementing an interface member emits an interface-or-override-dispatch gap, and a call through the interface resolves ambiguous while a call on the concrete class resolves exactly.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/store.ts :: FileStore :: method :: save",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "invoke",
+            "resolution": { "status": "ambiguous" },
+            "from": "src/use.ts :: :: function :: persist",
+            "site": { "file": "src/use.ts", "line": 5 }
+          },
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/use.ts :: :: function :: persistConcrete",
+            "site": { "file": "src/use.ts", "line": 9 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": [
+          {
+            "kind": "interface-or-override-dispatch",
+            "snapshot": "head",
+            "site": { "file": "src/store.ts", "line": 6 },
+            "relatedSeed": "src/store.ts :: FileStore :: method :: save",
+            "reasonCode": "implements-interface-member"
+          }
+        ]
+      }
+    ],
+    "repoWideGaps": []
+  }
+}
