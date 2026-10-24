@@ -1,4 +1,4 @@
-import { Node, type SourceFile } from "ts-morph";
+import { Node, SyntaxKind, type SourceFile } from "ts-morph";
 
 import type { Callable } from "../../src/analysis/identity.js";
 import type {
@@ -165,12 +165,13 @@ function explain(
   if (input.result.usages.some(at(seedKey, filePath, pos)))
     return { kind: "usage" };
 
+  const node = sourceFile.getDescendantAtPos(pos);
+
   const filtered = input.result.filtered.find(at(seedKey, filePath, pos));
-  if (filtered !== undefined) {
+  if (filtered !== undefined && believableHere(filtered.reason, node)) {
     return { kind: "filtered", reason: filtered.reason };
   }
 
-  const node = sourceFile.getDescendantAtPos(pos);
   // Positions inside trivia have no descendant: an occurrence of the characters only.
   if (node === undefined) return { kind: "comment-or-string" };
 
@@ -336,6 +337,12 @@ function heritageVerdict(
   }
   const clause = parent.getParent();
   if (!Node.isHeritageClause(clause)) return undefined;
+  // `extends`, not `implements`. Without this a class implementing a seed class was run
+  // through the construction tripwire, and an implementing class with no constructor of
+  // its own was reported unexplained for "no implicit construct usage" — a false alarm
+  // about code that constructs nothing. `implements` is a type position and is settled
+  // by the filter rules, not here.
+  if (clause.getToken() !== SyntaxKind.ExtendsKeyword) return undefined;
   const subclass = clause.getParent();
   if (!Node.isClassDeclaration(subclass) && !Node.isClassExpression(subclass)) {
     return undefined;
@@ -354,8 +361,14 @@ function heritageVerdict(
     };
   }
 
+  // Scoped to **this seed**, like every other lookup here. A `super()` site carries no
+  // textual occurrence of the class name, so this searches a byte range rather than a
+  // position — which makes the seed key load-bearing rather than incidental: without it
+  // any other changed callable invoked in the same constructor explains away the loss of
+  // the `super()` this clause delegates to.
   const reported = input.result.usages.some(
     (usage) =>
+      usage.seedKey === seedKey &&
       usage.filePath === filePath &&
       usage.pos >= constructor.getStart() &&
       usage.pos < constructor.getEnd(),
@@ -366,6 +379,49 @@ function heritageVerdict(
         kind: "unexplained",
         why: "an extends clause whose subclass constructor reported no super() usage",
       };
+}
+
+/**
+ * Whether a filter reason can be true of the place the occurrence actually sits.
+ *
+ * The harness used to accept any filtered record at the position, which is how a
+ * supported-pattern usage disappeared with the check agreeing: everything under
+ * `extends withRetry(Client)` was filtered `type-only`, and "it was filtered" was taken
+ * as an explanation without asking whether that reason could hold there.
+ *
+ * Only `type-only` is judged, because it is the only reason whose truth depends on
+ * *where* the node is rather than on what the node is. Resolved independently of the
+ * analyzer, per §10 — a check that shared the classifier's walk would have agreed with
+ * the bug, which is precisely what happened.
+ */
+function believableHere(reason: string, node: Node | undefined): boolean {
+  if (reason !== "type-only") return true;
+  return node !== undefined && sitsInTypePosition(node);
+}
+
+/** A type position, deciding a class's `extends` expression to be a value position. */
+function sitsInTypePosition(node: Node): boolean {
+  for (
+    let current: Node | undefined = node;
+    current !== undefined;
+    current = current.getParent()
+  ) {
+    if (Node.isExpressionWithTypeArguments(current)) {
+      const clause = current.getParent();
+      if (Node.isHeritageClause(clause)) {
+        const owner = clause.getParent();
+        // An interface's `extends` and a class's `implements` are type positions. A
+        // class's `extends` evaluates an expression at runtime and is not.
+        const classExtends =
+          clause.getToken() === SyntaxKind.ExtendsKeyword &&
+          (Node.isClassDeclaration(owner) || Node.isClassExpression(owner));
+        return !classExtends;
+      }
+    }
+    if (Node.isTypeNode(current)) return true;
+    if (Node.isStatement(current)) return false;
+  }
+  return false;
 }
 
 /**

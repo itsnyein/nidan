@@ -141,49 +141,6 @@ function actualUsages(result: ReferenceResult): string[] {
     .sort();
 }
 
-/**
- * Fixtures whose record states a ruling that is **not yet implemented**.
- *
- * Each entry is asserted to **fail** below, not skipped. A skip-list could hide a genuine
- * regression and would outlive its fix silently; asserting the current wrong behaviour
- * means the day the ruling lands, the `still` test fails and forces the entry out.
- */
-const PENDING_USAGES = new Map<string, string>([
-  [
-    "usage-value-position",
-    "the value-position and tagged-template rulings are not implemented: everything under a class extends expression is filtered type-only, and a tagged template has no call expression for the relation to read",
-  ],
-]);
-
-describe("rulings not yet implemented", () => {
-  it.each([...PENDING_USAGES])(
-    "%s still loses the extends-expression references and miscalls the tag",
-    async (name) => {
-      const outcome = await analyze(join("tests", "fixtures", name));
-
-      // The current behaviour, stated exactly. When the rulings land this fails, which is
-      // the point: the entry cannot survive its own fix.
-      expect(actualUsages(outcome.result)).toEqual([
-        "src/tag.ts :: :: function :: label | value-reference | src/use.ts :: module | src/use.ts:7 | exact",
-      ]);
-      // Both extends-expression references are filtered as a **type** position, which is
-      // the defect itself rather than a side effect of it.
-      expect(
-        outcome.result.filtered
-          .filter((reference) => reference.reason === "type-only")
-          .filter((reference) => reference.filePath === "src/use.ts")
-          .map((reference) => reference.seedKey.split(" :: ").pop() ?? "")
-          .sort(),
-      ).toEqual(["constructor", "withRetry"]);
-      // And the harness agrees with all of it — nothing is unexplained. This is the half
-      // the fix must close independently: a type-only record must not be allowed to
-      // explain an occurrence sitting in a value position.
-      expect(unexplainedOf(outcome.occurrences)).toEqual([]);
-    },
-    TIMEOUT_MS,
-  );
-});
-
 describe("usages against the frozen fixtures", () => {
   // **Every** fixture, not only the ones whose records declare a usage. Keying on record
   // content is the defect this repository has already paid for twice: a fixture that
@@ -191,9 +148,7 @@ describe("usages against the frozen fixtures", () => {
   // "has at least one usage" removed exactly those from the check. A record that empties
   // itself would also have deleted its own assertion.
   const names = allFixtures();
-  const declaring = names
-    .filter((name) => expectedUsages(name) !== undefined)
-    .filter((name) => !PENDING_USAGES.has(name));
+  const declaring = names.filter((name) => expectedUsages(name) !== undefined);
 
   it("includes the fixtures that freeze an empty usage list", () => {
     // The property the enumeration exists for, asserted rather than assumed. A fixture
@@ -388,6 +343,148 @@ const KEY_SHAPE_CASE = {
     "  return stringKey + templateKey + substituted + identifierKey + computedKey;\n" +
     "}\n",
 };
+
+/**
+ * Every heritage and annotation shape, and whether it is a **type** position.
+ *
+ * The second table, for the second rule that now has two independent implementations:
+ * the analyzer's `isTypeOnlyPosition` decides what to filter, and the harness's
+ * `sitsInTypePosition` decides whether a `type-only` record can be believed where it
+ * landed. §10 requires both, and requires them to be tied by a table rather than by a
+ * shared helper — the duplication without the table is how the two could agree on a
+ * wrong answer, which is the shape of the defect that created this rule.
+ */
+const TYPE_POSITION_SHAPES = [
+  { line: 4, shape: "class extends expression", isType: false },
+  { line: 6, shape: "class implements clause", isType: true },
+  { line: 10, shape: "interface extends clause", isType: true },
+  { line: 14, shape: "parameter type annotation", isType: true },
+] as const;
+
+/**
+ * Every shape names **the seed**, which is what makes the rows reachable.
+ *
+ * The occurrence scan searches for the seed's own name, so a type position mentioning
+ * some other type contributes nothing to explain and the row would assert on an
+ * occurrence that does not exist. An interface may extend a class, which is what lets
+ * the same name appear in all four positions.
+ */
+const TYPE_POSITION_CASE = {
+  "src/seed.ts":
+    "export class Seed {\n  constructor(readonly url: string) {}\n}\n",
+  "src/mix.ts":
+    'import { Seed } from "./seed.js";\n\ntype Ctor = new (url: string) => Seed;\n\nexport function wrap(base: Ctor): Ctor {\n  return base;\n}\n',
+  "src/use.ts":
+    'import { Seed } from "./seed.js";\n' +
+    'import { wrap } from "./mix.js";\n' +
+    "\n" +
+    "export class Wrapped extends wrap(Seed) {}\n" +
+    "\n" +
+    'export class Impl implements Seed {\n  readonly url = "u";\n}\n' +
+    "\n" +
+    "export interface Bigger extends Seed {\n  extra: string;\n}\n" +
+    "\n" +
+    "export function take(seed: Seed): string {\n  return seed.url;\n}\n",
+};
+
+describe("the classifier and the differential check agree on type positions", () => {
+  it(
+    "treats a class extends expression as a value position, on both sides",
+    async () => {
+      // One case, read twice. The analyzer's answer is what it filtered; the harness's
+      // answer is whether it will believe a `type-only` record placed at that position.
+      const outcome = await analyze(
+        await throwawayCase({
+          base: TYPE_POSITION_CASE,
+          head: {
+            ...TYPE_POSITION_CASE,
+            "src/seed.ts":
+              'export class Seed {\n  constructor(readonly url: string) {\n    if (url === "") throw new Error("url is required");\n  }\n}\n',
+            // `wrap` changes too, so the **call** in the extends expression is a seed
+            // reference as well as its argument. Without this the table's first row is
+            // never exercised and line 5 carries only one usage.
+            "src/mix.ts":
+              'import { Seed } from "./seed.js";\n\ntype Ctor = new (url: string) => Seed;\n\nexport function wrap(base: Ctor): Ctor {\n  void base;\n  return base;\n}\n',
+          },
+        }),
+      );
+
+      const valueLines = [
+        ...new Set(
+          TYPE_POSITION_SHAPES.filter((entry) => !entry.isType).map(
+            (entry) => entry.line,
+          ),
+        ),
+      ];
+
+      // Side one: the analyzer reported the value-position references as usages rather
+      // than filtering them.
+      expect(
+        outcome.result.usages
+          .filter((usage) => usage.filePath === "src/use.ts")
+          .map((usage) => usage.line)
+          .sort(),
+      ).toEqual([4, 4]);
+
+      // Side two: a `type-only` record is refused exactly where the table says the
+      // position is not a type position, and accepted where it says it is.
+      const typeOnlyAt = (line: number) => {
+        const occurrence = outcome.occurrences.find(
+          (candidate) =>
+            candidate.filePath === "src/use.ts" && candidate.line === line,
+        );
+        expect(
+          occurrence,
+          `no occurrence on line ${String(line)}`,
+        ).toBeDefined();
+        if (occurrence === undefined) return "missing";
+        const doctored = {
+          usages: outcome.result.usages.filter(
+            (usage) =>
+              !(usage.filePath === "src/use.ts" && usage.line === line),
+          ),
+          filtered: [
+            ...outcome.result.filtered.filter(
+              (reference) =>
+                !(
+                  reference.filePath === "src/use.ts" && reference.line === line
+                ),
+            ),
+            {
+              seedKey: occurrence.seedKey,
+              reason: "type-only" as const,
+              filePath: "src/use.ts",
+              line,
+              pos: occurrence.pos,
+            },
+          ],
+        };
+        const verdict = outcome
+          .explain(doctored)
+          .find(
+            (candidate) =>
+              candidate.filePath === "src/use.ts" &&
+              candidate.pos === occurrence.pos,
+          );
+        return verdict?.explanation.kind ?? "missing";
+      };
+
+      for (const line of valueLines) {
+        expect(
+          typeOnlyAt(line),
+          `line ${String(line)} is a value position`,
+        ).toBe("unexplained");
+      }
+      for (const entry of TYPE_POSITION_SHAPES.filter((row) => row.isType)) {
+        expect(
+          typeOnlyAt(entry.line),
+          `${entry.shape} on line ${String(entry.line)}`,
+        ).toBe("filtered");
+      }
+    },
+    TIMEOUT_MS,
+  );
+});
 
 describe("the classifier and the differential check agree on key shapes", () => {
   it(
@@ -877,6 +974,113 @@ describe("a reference that does not resolve to the seed", () => {
 });
 
 describe("the differential check can fail", () => {
+  it(
+    "does not let another seed's call explain a lost super()",
+    async () => {
+      // The absorption hole again, in the one lookup that searches a **byte range**
+      // rather than a position. A `super()` site carries no textual occurrence of the
+      // class name, so the heritage tripwire asks "did anything get reported inside this
+      // constructor" — and without the seed key, anything means any seed.
+      //
+      // The shape: a subclass constructor that calls `super()` **and** a second changed
+      // callable. Both are seeds, so both have usages in the same byte range.
+      const base = {
+        "src/base.ts":
+          "export class Base {\n  constructor(readonly url: string) {}\n}\n",
+        "src/helper.ts":
+          'export function helper(): string {\n  return "a";\n}\n',
+        "src/sub.ts":
+          'import { Base } from "./base.js";\nimport { helper } from "./helper.js";\n\nexport class Sub extends Base {\n  constructor() {\n    super("u");\n    void helper();\n  }\n}\n',
+      };
+      const outcome = await analyze(
+        await throwawayCase({
+          base,
+          head: {
+            ...base,
+            "src/base.ts":
+              'export class Base {\n  constructor(readonly url: string) {\n    if (url === "") throw new Error("url is required");\n  }\n}\n',
+            "src/helper.ts":
+              'export function helper(): string {\n  return "a".trim();\n}\n',
+          },
+        }),
+      );
+
+      // Asserted, not assumed: two seeds, and both report a usage inside the same
+      // constructor. Without that the rest of this test proves nothing.
+      expect(outcome.seeds.seeds).toHaveLength(2);
+      expect(
+        outcome.result.usages.filter(
+          (usage) => usage.filePath === "src/sub.ts",
+        ),
+      ).toHaveLength(2);
+      expect(unexplainedOf(outcome.occurrences)).toEqual([]);
+
+      // Drop only the base class's usages — exactly "lost `super()` detection". The
+      // surviving `helper()` call sits in the same constructor and must not stand in
+      // for it.
+      const withoutSuper = {
+        ...outcome.result,
+        usages: outcome.result.usages.filter(
+          (usage) => !usage.seedKey.includes("Base"),
+        ),
+      };
+
+      expect(
+        unexplainedOf(outcome.explain(withoutSuper)).map(
+          (occurrence) => `${occurrence.filePath}:${String(occurrence.line)}`,
+        ),
+      ).toEqual(["src/sub.ts:4"]);
+    },
+    TIMEOUT_MS,
+  );
+
+  it(
+    "refuses a type-only filter record for a value position",
+    async () => {
+      // The harness half of the mixin fix, and it needs its own test for a reason worth
+      // stating: with the classifier fixed those references are **usages**, so no
+      // `type-only` record exists at those positions and the guard never runs. Mutating
+      // the guard away leaves the whole suite green. Only a doctored result — the
+      // classifier regressed to exactly the old behaviour — exercises it.
+      const outcome = await analyze(
+        join("tests", "fixtures", "usage-value-position"),
+      );
+      const insideExtends = outcome.result.usages.filter(
+        (usage) => usage.filePath === "src/use.ts" && usage.line === 5,
+      );
+      // Both of them: the mixin call and its argument. If this ever finds fewer, the
+      // fixture changed and the rest of this test is measuring something else.
+      expect(insideExtends).toHaveLength(2);
+
+      const asOldBehaviour = {
+        usages: outcome.result.usages.filter(
+          (usage) => !insideExtends.includes(usage),
+        ),
+        filtered: [
+          ...outcome.result.filtered,
+          ...insideExtends.map((usage) => ({
+            seedKey: usage.seedKey,
+            reason: "type-only" as const,
+            filePath: usage.filePath,
+            line: usage.line,
+            pos: usage.pos,
+          })),
+        ],
+      };
+
+      const unexplained = unexplainedOf(outcome.explain(asOldBehaviour));
+
+      // "It was filtered" must not count as an explanation here: a class's `extends`
+      // expression is ordinary code, so `type-only` cannot be true of it.
+      expect(
+        unexplained.map(
+          (occurrence) => `${occurrence.filePath}:${String(occurrence.line)}`,
+        ),
+      ).toEqual(["src/use.ts:5", "src/use.ts:5"]);
+    },
+    TIMEOUT_MS,
+  );
+
   it(
     "does not let a renamed seed's usage explain the deleted one's",
     async () => {
