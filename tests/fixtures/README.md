@@ -116,3 +116,6 @@ can be tightened deliberately.
 | [`usage-value-position`](usage-value-position/README.md)                           | A mixin call in `extends` and a tagged template are `invoke`     |
 | [`usage-commonjs-require`](usage-commonjs-require/README.md)                       | The three supported `require` spellings reach one seed           |
 | [`usage-commonjs-exports`](usage-commonjs-exports/README.md)                       | CommonJS export spellings are module patterns, not usages        |
+| [`gap-dynamic-require`](gap-dynamic-require/README.md)                             | Computed and aliased `require` give repo-wide gaps               |
+| [`gap-dynamic-import`](gap-dynamic-import/README.md)                               | A computed `import()` gaps; a literal one still resolves         |
+| [`gap-unresolved-module`](gap-unresolved-module/README.md)                         | An unresolved specifier gaps without losing the file             |

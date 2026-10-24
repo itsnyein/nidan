@@ -1,0 +1,31 @@
+{
+  "description": "A computed import() produces a repo-wide dynamic-import gap, while a literal import beside it resolves and its call is reported as a usage.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/greet.ts :: :: function :: greet",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/use.ts :: :: function :: loadLiteral",
+            "site": { "file": "src/use.ts", "line": 7 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": [
+      {
+        "kind": "dynamic-import",
+        "snapshot": "head",
+        "site": { "file": "src/use.ts", "line": 2 },
+        "expression": "import(name)",
+        "reasonCode": "non-literal-specifier"
+      }
+    ]
+  }
+}

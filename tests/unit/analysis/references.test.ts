@@ -221,6 +221,9 @@ describe("usages against the frozen fixtures", () => {
     expect(
       declaring.filter((name) => expectedUsages(name)?.length === 0),
     ).toEqual([
+      // Records `"usages": []` because a computed and an aliased require resolve to
+      // nothing — the empty list is the assertion, not an omission.
+      "gap-dynamic-require",
       "identity-default-exports",
       "identity-nested-static-collision",
       "identity-static-vs-instance",

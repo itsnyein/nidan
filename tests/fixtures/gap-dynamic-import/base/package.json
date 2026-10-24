@@ -1,0 +1,5 @@
+{
+  "name": "gap-dynamic-import",
+  "private": true,
+  "type": "module"
+}

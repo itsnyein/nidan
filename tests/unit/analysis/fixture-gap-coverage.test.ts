@@ -5,13 +5,14 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { diffCommits } from "../../../src/analysis/diff.js";
 import { enumerateCallables } from "../../../src/analysis/identity.js";
-import { mapSeeds } from "../../../src/analysis/seeds.js";
+import { mapSeeds, type SeedResult } from "../../../src/analysis/seeds.js";
 import { loadSnapshotPair } from "../../../src/project/program.js";
 import {
   expectGapsEqual,
   expectGapsMatchFixture,
   allFixtures,
   parseRecordedGaps,
+  recordedGaps,
   parseRecord,
   type RecordedGap,
 } from "../../helpers/fixture-gaps.js";
@@ -56,9 +57,20 @@ afterEach(async () => {
 // a failure that does not occur, and the entry would later need removing for a reason
 // unrelated to the fix. Its seed expectation is pending in `seeds.test.ts`.
 const PENDING = new Map<string, string>([
-  // Empty: every ruling the fixtures record is implemented. Entries here assert the
-  // **current wrong behaviour**, so an implemented ruling makes its entry fail and forces
-  // this removal — a skip-list that cannot outlive its fix.
+  // Entries assert the **current wrong behaviour**, so an implemented ruling makes its
+  // entry fail and forces removal — a skip-list that cannot outlive its fix.
+  [
+    "gap-dynamic-require",
+    "dynamic-require is not implemented: the computed and aliased requires produce no gap",
+  ],
+  [
+    "gap-dynamic-import",
+    "dynamic-import is not implemented: the computed import() produces no gap",
+  ],
+  [
+    "gap-unresolved-module",
+    "unresolved-module is not implemented: the absent package produces no gap",
+  ],
 ]);
 
 describe("every fixture is asserted against its record", () => {
@@ -83,23 +95,41 @@ describe("every fixture is asserted against its record", () => {
     expect(names.length).toBeGreaterThan(0);
   });
 
-  it("has no pending fixtures", () => {
-    // Guards the empty map: if an entry is added, this fails until it is justified and
-    // this test updated, so parking a fixture is never silent.
-    expect([...PENDING.keys()]).toEqual([]);
+  it("lists exactly the fixtures whose gap kinds are unimplemented", () => {
+    // The map is not empty any more, and that has to stay deliberate. Naming the entries
+    // means adding a fourth fails here until someone justifies it, which is what the
+    // empty-map version bought and what a bare `length` check would give away.
+    expect([...PENDING.keys()].sort()).toEqual([
+      "gap-dynamic-import",
+      "gap-dynamic-require",
+      "gap-unresolved-module",
+    ]);
   });
+
+  it.each([...PENDING])(
+    "%s still records a gap it does not produce",
+    async (name) => {
+      // Asserted to fail, not skipped. Each of these records a repo-wide gap for a kind
+      // that does not exist yet; the day it lands, this test fails and forces the entry
+      // out of the map.
+      const result = await runFixture(name);
+      expect(result.gaps).toEqual([]);
+      expect(recordedGaps(name).length).toBeGreaterThan(0);
+    },
+  );
 
   it.each(names)(
     "%s produces exactly the gaps it records",
     async (name) => {
-      await runFixture(name);
+      expectGapsMatchFixture(await runFixture(name), name);
     },
     TIMEOUT_MS,
   );
 });
 
 /** Runs the whole chain over a fixture and asserts its gaps against its record. */
-async function runFixture(name: string): Promise<void> {
+/** Runs a fixture and returns its seed result, asserting nothing. */
+async function runFixture(name: string): Promise<SeedResult> {
   const repo = await createFixtureRepo(join("tests", "fixtures", name));
   cleanups.push(repo.cleanup);
   const pair = await loadSnapshotPair({
@@ -114,7 +144,7 @@ async function runFixture(name: string): Promise<void> {
     head: enumerateCallables(pair.head.project.getSourceFiles(), repo.path),
   });
 
-  expectGapsMatchFixture(result, name);
+  return result;
 }
 
 describe("the case table lists every fixture", () => {
