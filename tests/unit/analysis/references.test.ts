@@ -344,6 +344,148 @@ const KEY_SHAPE_CASE = {
     "}\n",
 };
 
+/**
+ * Every heritage and annotation shape, and whether it is a **type** position.
+ *
+ * The second table, for the second rule that now has two independent implementations:
+ * the analyzer's `isTypeOnlyPosition` decides what to filter, and the harness's
+ * `sitsInTypePosition` decides whether a `type-only` record can be believed where it
+ * landed. §10 requires both, and requires them to be tied by a table rather than by a
+ * shared helper — the duplication without the table is how the two could agree on a
+ * wrong answer, which is the shape of the defect that created this rule.
+ */
+const TYPE_POSITION_SHAPES = [
+  { line: 4, shape: "class extends expression", isType: false },
+  { line: 6, shape: "class implements clause", isType: true },
+  { line: 10, shape: "interface extends clause", isType: true },
+  { line: 14, shape: "parameter type annotation", isType: true },
+] as const;
+
+/**
+ * Every shape names **the seed**, which is what makes the rows reachable.
+ *
+ * The occurrence scan searches for the seed's own name, so a type position mentioning
+ * some other type contributes nothing to explain and the row would assert on an
+ * occurrence that does not exist. An interface may extend a class, which is what lets
+ * the same name appear in all four positions.
+ */
+const TYPE_POSITION_CASE = {
+  "src/seed.ts":
+    "export class Seed {\n  constructor(readonly url: string) {}\n}\n",
+  "src/mix.ts":
+    'import { Seed } from "./seed.js";\n\ntype Ctor = new (url: string) => Seed;\n\nexport function wrap(base: Ctor): Ctor {\n  return base;\n}\n',
+  "src/use.ts":
+    'import { Seed } from "./seed.js";\n' +
+    'import { wrap } from "./mix.js";\n' +
+    "\n" +
+    "export class Wrapped extends wrap(Seed) {}\n" +
+    "\n" +
+    'export class Impl implements Seed {\n  readonly url = "u";\n}\n' +
+    "\n" +
+    "export interface Bigger extends Seed {\n  extra: string;\n}\n" +
+    "\n" +
+    "export function take(seed: Seed): string {\n  return seed.url;\n}\n",
+};
+
+describe("the classifier and the differential check agree on type positions", () => {
+  it(
+    "treats a class extends expression as a value position, on both sides",
+    async () => {
+      // One case, read twice. The analyzer's answer is what it filtered; the harness's
+      // answer is whether it will believe a `type-only` record placed at that position.
+      const outcome = await analyze(
+        await throwawayCase({
+          base: TYPE_POSITION_CASE,
+          head: {
+            ...TYPE_POSITION_CASE,
+            "src/seed.ts":
+              'export class Seed {\n  constructor(readonly url: string) {\n    if (url === "") throw new Error("url is required");\n  }\n}\n',
+            // `wrap` changes too, so the **call** in the extends expression is a seed
+            // reference as well as its argument. Without this the table's first row is
+            // never exercised and line 5 carries only one usage.
+            "src/mix.ts":
+              'import { Seed } from "./seed.js";\n\ntype Ctor = new (url: string) => Seed;\n\nexport function wrap(base: Ctor): Ctor {\n  void base;\n  return base;\n}\n',
+          },
+        }),
+      );
+
+      const valueLines = [
+        ...new Set(
+          TYPE_POSITION_SHAPES.filter((entry) => !entry.isType).map(
+            (entry) => entry.line,
+          ),
+        ),
+      ];
+
+      // Side one: the analyzer reported the value-position references as usages rather
+      // than filtering them.
+      expect(
+        outcome.result.usages
+          .filter((usage) => usage.filePath === "src/use.ts")
+          .map((usage) => usage.line)
+          .sort(),
+      ).toEqual([4, 4]);
+
+      // Side two: a `type-only` record is refused exactly where the table says the
+      // position is not a type position, and accepted where it says it is.
+      const typeOnlyAt = (line: number) => {
+        const occurrence = outcome.occurrences.find(
+          (candidate) =>
+            candidate.filePath === "src/use.ts" && candidate.line === line,
+        );
+        expect(
+          occurrence,
+          `no occurrence on line ${String(line)}`,
+        ).toBeDefined();
+        if (occurrence === undefined) return "missing";
+        const doctored = {
+          usages: outcome.result.usages.filter(
+            (usage) =>
+              !(usage.filePath === "src/use.ts" && usage.line === line),
+          ),
+          filtered: [
+            ...outcome.result.filtered.filter(
+              (reference) =>
+                !(
+                  reference.filePath === "src/use.ts" && reference.line === line
+                ),
+            ),
+            {
+              seedKey: occurrence.seedKey,
+              reason: "type-only" as const,
+              filePath: "src/use.ts",
+              line,
+              pos: occurrence.pos,
+            },
+          ],
+        };
+        const verdict = outcome
+          .explain(doctored)
+          .find(
+            (candidate) =>
+              candidate.filePath === "src/use.ts" &&
+              candidate.pos === occurrence.pos,
+          );
+        return verdict?.explanation.kind ?? "missing";
+      };
+
+      for (const line of valueLines) {
+        expect(
+          typeOnlyAt(line),
+          `line ${String(line)} is a value position`,
+        ).toBe("unexplained");
+      }
+      for (const entry of TYPE_POSITION_SHAPES.filter((row) => row.isType)) {
+        expect(
+          typeOnlyAt(entry.line),
+          `${entry.shape} on line ${String(entry.line)}`,
+        ).toBe("filtered");
+      }
+    },
+    TIMEOUT_MS,
+  );
+});
+
 describe("the classifier and the differential check agree on key shapes", () => {
   it(
     "treats exactly the literal keys as references, on both sides",
@@ -832,6 +974,66 @@ describe("a reference that does not resolve to the seed", () => {
 });
 
 describe("the differential check can fail", () => {
+  it(
+    "does not let another seed's call explain a lost super()",
+    async () => {
+      // The absorption hole again, in the one lookup that searches a **byte range**
+      // rather than a position. A `super()` site carries no textual occurrence of the
+      // class name, so the heritage tripwire asks "did anything get reported inside this
+      // constructor" — and without the seed key, anything means any seed.
+      //
+      // The shape: a subclass constructor that calls `super()` **and** a second changed
+      // callable. Both are seeds, so both have usages in the same byte range.
+      const base = {
+        "src/base.ts":
+          "export class Base {\n  constructor(readonly url: string) {}\n}\n",
+        "src/helper.ts":
+          'export function helper(): string {\n  return "a";\n}\n',
+        "src/sub.ts":
+          'import { Base } from "./base.js";\nimport { helper } from "./helper.js";\n\nexport class Sub extends Base {\n  constructor() {\n    super("u");\n    void helper();\n  }\n}\n',
+      };
+      const outcome = await analyze(
+        await throwawayCase({
+          base,
+          head: {
+            ...base,
+            "src/base.ts":
+              'export class Base {\n  constructor(readonly url: string) {\n    if (url === "") throw new Error("url is required");\n  }\n}\n',
+            "src/helper.ts":
+              'export function helper(): string {\n  return "a".trim();\n}\n',
+          },
+        }),
+      );
+
+      // Asserted, not assumed: two seeds, and both report a usage inside the same
+      // constructor. Without that the rest of this test proves nothing.
+      expect(outcome.seeds.seeds).toHaveLength(2);
+      expect(
+        outcome.result.usages.filter(
+          (usage) => usage.filePath === "src/sub.ts",
+        ),
+      ).toHaveLength(2);
+      expect(unexplainedOf(outcome.occurrences)).toEqual([]);
+
+      // Drop only the base class's usages — exactly "lost `super()` detection". The
+      // surviving `helper()` call sits in the same constructor and must not stand in
+      // for it.
+      const withoutSuper = {
+        ...outcome.result,
+        usages: outcome.result.usages.filter(
+          (usage) => !usage.seedKey.includes("Base"),
+        ),
+      };
+
+      expect(
+        unexplainedOf(outcome.explain(withoutSuper)).map(
+          (occurrence) => `${occurrence.filePath}:${String(occurrence.line)}`,
+        ),
+      ).toEqual(["src/sub.ts:4"]);
+    },
+    TIMEOUT_MS,
+  );
+
   it(
     "refuses a type-only filter record for a value position",
     async () => {

@@ -337,6 +337,12 @@ function heritageVerdict(
   }
   const clause = parent.getParent();
   if (!Node.isHeritageClause(clause)) return undefined;
+  // `extends`, not `implements`. Without this a class implementing a seed class was run
+  // through the construction tripwire, and an implementing class with no constructor of
+  // its own was reported unexplained for "no implicit construct usage" — a false alarm
+  // about code that constructs nothing. `implements` is a type position and is settled
+  // by the filter rules, not here.
+  if (clause.getToken() !== SyntaxKind.ExtendsKeyword) return undefined;
   const subclass = clause.getParent();
   if (!Node.isClassDeclaration(subclass) && !Node.isClassExpression(subclass)) {
     return undefined;
@@ -355,8 +361,14 @@ function heritageVerdict(
     };
   }
 
+  // Scoped to **this seed**, like every other lookup here. A `super()` site carries no
+  // textual occurrence of the class name, so this searches a byte range rather than a
+  // position — which makes the seed key load-bearing rather than incidental: without it
+  // any other changed callable invoked in the same constructor explains away the loss of
+  // the `super()` this clause delegates to.
   const reported = input.result.usages.some(
     (usage) =>
+      usage.seedKey === seedKey &&
       usage.filePath === filePath &&
       usage.pos >= constructor.getStart() &&
       usage.pos < constructor.getEnd(),
@@ -369,15 +381,6 @@ function heritageVerdict(
       };
 }
 
-/**
- * A record belonging to **this seed**, at this position.
- *
- * The seed key is not decoration. Base and head share relative paths, so without it a
- * base-side occurrence can be explained by a head-side usage that happens to sit at the
- * same offset — which is the ordinary **rename** shape, where the old and new call sites
- * land at the same offset in the same file. The check would then report "nothing
- * unexplained" while the deleted seed's usage was gone.
- */
 /**
  * Whether a filter reason can be true of the place the occurrence actually sits.
  *
@@ -421,6 +424,15 @@ function sitsInTypePosition(node: Node): boolean {
   return false;
 }
 
+/**
+ * A record belonging to **this seed**, at this position.
+ *
+ * The seed key is not decoration. Base and head share relative paths, so without it a
+ * base-side occurrence can be explained by a head-side usage that happens to sit at the
+ * same offset — which is the ordinary **rename** shape, where the old and new call sites
+ * land at the same offset in the same file. The check would then report "nothing
+ * unexplained" while the deleted seed's usage was gone.
+ */
 function at(seedKey: string, filePath: string, pos: number) {
   return (site: {
     readonly seedKey: string;

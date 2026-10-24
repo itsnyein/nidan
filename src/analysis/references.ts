@@ -79,8 +79,15 @@ export interface SnapshotReferences {
   readonly index: CallableIndex;
 }
 
-/** An impossible state reached during reference discovery (never a reported gap). */
-export class ReferenceDiscoveryError extends Error {
+/**
+ * An impossible state reached during reference discovery (never a reported gap).
+ *
+ * Not exported: nothing can usefully catch it. `exitCodeFor` falls through to
+ * `EXIT_FAILED` for an unrecognised error, which is the right answer here — the analysis
+ * did not complete, and a caller distinguishing this from any other internal fault would
+ * be acting on a state that is supposed to be unreachable.
+ */
+class ReferenceDiscoveryError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "ReferenceDiscoveryError";
@@ -285,10 +292,15 @@ function isDeclarationNameNode(node: Node, parent: Node): boolean {
  * `implements` is a type position that §9 already settles, and an interface's `extends`
  * is one too. Matching any heritage clause sent both down the construct path, which
  * answers a question neither of them asks: neither constructs anything.
+ *
+ * Two callers ask the same question for opposite reasons, which is why this is one
+ * predicate rather than two: the filter asks "is this the clause the heritage rule owns",
+ * and the type-position walk asks "is this the one heritage shape that is **not** a type
+ * position". A second copy would have to stay in step with this one by hand.
  */
-function isHeritageReference(parent: Node): boolean {
-  if (!Node.isExpressionWithTypeArguments(parent)) return false;
-  const clause = parent.getParent();
+function isHeritageReference(node: Node): boolean {
+  if (!Node.isExpressionWithTypeArguments(node)) return false;
+  const clause = node.getParent();
   if (!Node.isHeritageClause(clause)) return false;
   if (clause.getToken() !== SyntaxKind.ExtendsKeyword) return false;
   const owner = clause.getParent();
@@ -310,7 +322,7 @@ function isTypeOnlyPosition(node: Node): boolean {
     // heritage clause the walk used to stop at — so every reference inside
     // `extends withRetry(Client)` was swallowed as type-only, losing a call and its
     // argument with nothing reporting either (§15b).
-    if (isClassExtendsExpression(current)) return false;
+    if (isHeritageReference(current)) return false;
     if (Node.isTypeNode(current)) return true;
     // A heritage clause contains a type node in `implements`, but `extends` on a class is
     // a value position; stopping here keeps the heritage rule the one that decides.
@@ -319,22 +331,6 @@ function isTypeOnlyPosition(node: Node): boolean {
     current = current.getParent();
   }
   return false;
-}
-
-/**
- * A **class's** `extends <expression>`, which is ordinary code.
- *
- * Narrow on purpose. An interface's `extends` and a class's `implements` are genuinely
- * type positions and must keep answering `true` above; only the one clause that evaluates
- * an expression at runtime is excluded here.
- */
-function isClassExtendsExpression(node: Node): boolean {
-  if (!Node.isExpressionWithTypeArguments(node)) return false;
-  const clause = node.getParent();
-  if (!Node.isHeritageClause(clause)) return false;
-  if (clause.getToken() !== SyntaxKind.ExtendsKeyword) return false;
-  const owner = clause.getParent();
-  return Node.isClassDeclaration(owner) || Node.isClassExpression(owner);
 }
 
 /**
