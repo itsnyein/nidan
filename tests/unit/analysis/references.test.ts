@@ -325,6 +325,13 @@ const KEY_SHAPES = [
   },
   { line: 8, shape: "identifier holding a literal type", namesAMember: false },
   { line: 9, shape: "computed expression", namesAMember: false },
+  // Added after the milestone review, and the answer changed while it was being added.
+  // The first ruling said a parenthesized key is the literal and both sides must unwrap
+  // it; implementation showed the compiler's reference search returns **nothing** for
+  // this spelling, so the classifier is never handed a node to classify. Ruled a
+  // limitation instead. The row stays either way: a spelling absent from this table is
+  // invisible to the agreement test, which is the one blind spot the design has.
+  { line: 10, shape: "parenthesized string literal", namesAMember: false },
 ] as const;
 
 const KEY_SHAPE_CASE = {
@@ -340,7 +347,15 @@ const KEY_SHAPE_CASE = {
     '  const send = "send" as const;\n' +
     '  const identifierKey = client[send]("4");\n' +
     '  const computedKey = client[(prefix + "send") as "send"]("5");\n' +
-    "  return stringKey + templateKey + substituted + identifierKey + computedKey;\n" +
+    '  const parenthesized = client[("send")]("6");\n' +
+    "  return (\n" +
+    "    stringKey +\n" +
+    "    templateKey +\n" +
+    "    substituted +\n" +
+    "    identifierKey +\n" +
+    "    computedKey +\n" +
+    "    parenthesized\n" +
+    "  );\n" +
     "}\n",
 };
 

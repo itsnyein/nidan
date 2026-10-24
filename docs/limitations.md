@@ -38,7 +38,7 @@ Specifically, `.call()`, `.apply()`, `.bind()`, unions of callable types, and da
 
 A key that is a **literal** is an ordinary member call. Both `obj["method"]()` and ``obj[`method`]()`` name the same member as `obj.method()`, so nidan reports each as an `invoke` usage with `exact` resolution.
 
-A key that is written any other way is **not discovered**, and there are two different reasons for that.
+A key that is written any other way is **not discovered**, for three different reasons.
 
 **The key genuinely names no member.** `obj[name]()` where `name` is an ordinary `string`, `obj[key + suffix]()`, and a template literal **with substitutions** such as ``obj[`${prefix}method`]()`` select a member at runtime. Nothing in the source says which one.
 
@@ -51,9 +51,11 @@ client[send]("payload"); // type-checks, and resolves to Client.send
 
 TypeScript resolves that call and will reject it if `send` is not a member. nidan still does not report it. Usage discovery is driven by the compiler's reference search, which returns literal keys written in place and does not return keys reached through a constant — so no reference arrives to be classified. **The limitation is in nidan's discovery, not in the type system**, and saying otherwise would misdescribe what the compiler knows.
 
-Both cases produce **no usage and no gap**: there is no reference to report, rather than one that could not be resolved. They sit with runtime reflection in the [coverage statement](#coverage-statement) — dynamic dependencies nidan does not claim to detect.
+**A literal in parentheses is also not discovered.** `client[("send")]()` resolves exactly as `client["send"]()` does and type-checks identically, but the compiler's reference search returns nothing for it, so the call reaches nidan as no reference at all. Parenthesising a key therefore hides a usage that the same key would have revealed written plainly — surprising, and worth knowing if a report looks emptier than expected.
 
-The practical consequence is the same either way: if a changed method is only ever reached through a key nidan does not follow, the report shows it with no usages. Treat a dispatch table — keyed by variable or by constant — as outside what the report covers.
+All three produce **no usage and no gap**: there is no reference to report, rather than one that could not be resolved. They sit with runtime reflection in the [coverage statement](#coverage-statement) — dynamic dependencies nidan does not claim to detect.
+
+The practical consequence is the same in every case: if a changed method is only ever reached through a key nidan does not follow, the report shows it with no usages. Treat a dispatch table — keyed by variable, by constant, or by a parenthesised literal — as outside what the report covers.
 
 ### Untyped receivers are not resolved
 
