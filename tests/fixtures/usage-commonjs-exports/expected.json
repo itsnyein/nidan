@@ -1,0 +1,51 @@
+{
+  "description": "The three supported CommonJS export spellings are module patterns, not usages: each is filtered, and the calls through the required namespace are the usages.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/lib.js :: :: function :: alpha",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/use.js :: :: function :: callAll",
+            "site": { "file": "src/use.js", "line": 4 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      },
+      {
+        "key": "src/lib.js :: :: function :: bravo",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/use.js :: :: function :: callAll",
+            "site": { "file": "src/use.js", "line": 4 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      },
+      {
+        "key": "src/lib.js :: :: function :: charlie",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/use.js :: :: function :: callAll",
+            "site": { "file": "src/use.js", "line": 4 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": []
+  }
+}
