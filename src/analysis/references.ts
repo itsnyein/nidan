@@ -305,6 +305,12 @@ function isHeritageReference(parent: Node): boolean {
 function isTypeOnlyPosition(node: Node): boolean {
   let current: Node | undefined = node;
   while (current !== undefined) {
+    // **Before** the type-node test, which is the whole fix. ts-morph answers `true` to
+    // `isTypeNode` for `ExpressionWithTypeArguments`, and that node sits *below* the
+    // heritage clause the walk used to stop at — so every reference inside
+    // `extends withRetry(Client)` was swallowed as type-only, losing a call and its
+    // argument with nothing reporting either (§15b).
+    if (isClassExtendsExpression(current)) return false;
     if (Node.isTypeNode(current)) return true;
     // A heritage clause contains a type node in `implements`, but `extends` on a class is
     // a value position; stopping here keeps the heritage rule the one that decides.
@@ -313,6 +319,22 @@ function isTypeOnlyPosition(node: Node): boolean {
     current = current.getParent();
   }
   return false;
+}
+
+/**
+ * A **class's** `extends <expression>`, which is ordinary code.
+ *
+ * Narrow on purpose. An interface's `extends` and a class's `implements` are genuinely
+ * type positions and must keep answering `true` above; only the one clause that evaluates
+ * an expression at runtime is excluded here.
+ */
+function isClassExtendsExpression(node: Node): boolean {
+  if (!Node.isExpressionWithTypeArguments(node)) return false;
+  const clause = node.getParent();
+  if (!Node.isHeritageClause(clause)) return false;
+  if (clause.getToken() !== SyntaxKind.ExtendsKeyword) return false;
+  const owner = clause.getParent();
+  return Node.isClassDeclaration(owner) || Node.isClassExpression(owner);
 }
 
 /**
@@ -426,6 +448,12 @@ function relationOf(node: Node): Relation {
   }
   if (Node.isNewExpression(parent) && parent.getExpression() === target) {
     return "construct";
+  }
+  // A tagged template calls its tag (§15b). There is no `CallExpression` in the tree for
+  // it, so without this branch it falls to the residue relation and a call reads as a
+  // value.
+  if (Node.isTaggedTemplateExpression(parent) && parent.getTag() === target) {
+    return "invoke";
   }
   if (Node.isJsxTagNamed(parent) && parent.getTagNameNode() === target) {
     return "jsx-render";
