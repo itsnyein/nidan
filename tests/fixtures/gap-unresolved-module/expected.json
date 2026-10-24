@@ -1,0 +1,31 @@
+{
+  "description": "An import specifier that cannot be resolved produces a repo-wide unresolved-module gap, while the resolvable import beside it still reports its usage.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/greet.ts :: :: function :: greet",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/use.ts :: :: function :: report",
+            "site": { "file": "src/use.ts", "line": 6 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": [
+      {
+        "kind": "unresolved-module",
+        "snapshot": "head",
+        "site": { "file": "src/use.ts", "line": 2 },
+        "expression": "missing-package",
+        "reasonCode": "specifier-did-not-resolve"
+      }
+    ]
+  }
+}

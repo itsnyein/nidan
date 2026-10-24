@@ -1,0 +1,31 @@
+{
+  "description": "A computed require and an aliased require each produce a repo-wide dynamic-require gap, because nothing connects either to a particular seed.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/greet.js :: :: function :: greet",
+        "change": "modified",
+        "usages": [],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": [
+      {
+        "kind": "dynamic-require",
+        "snapshot": "head",
+        "site": { "file": "src/use.js", "line": 6 },
+        "expression": "require(name)",
+        "reasonCode": "non-literal-specifier"
+      },
+      {
+        "kind": "dynamic-require",
+        "snapshot": "head",
+        "site": { "file": "src/use.js", "line": 12 },
+        "expression": "load(\"./greet.js\")",
+        "reasonCode": "aliased-require"
+      }
+    ]
+  }
+}
