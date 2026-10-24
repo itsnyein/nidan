@@ -84,7 +84,7 @@ export function expectGapsEqual(
 }
 
 /**
- * The gaps a fixture's `expected.json` records.
+ * The gaps a fixture's `expected.json` records, in **both** scopes.
  *
  * **No defaults.** A record missing `snapshot` or `site.file` is a test error naming the
  * fixture and the field, never a value filled in here: a default would silently compare
@@ -100,6 +100,14 @@ export function recordedGaps(name: string): RecordedGap[] {
   // field is validated below rather than trusted. `expectedSeeds` casts the same shape.
   const parsed = JSON.parse(raw) as {
     expect?: {
+      seeds?: Array<{
+        gaps?: Array<{
+          kind?: string;
+          snapshot?: string;
+          site?: { file?: string };
+          reasonCode?: string;
+        }>;
+      }>;
       repoWideGaps?: Array<{
         kind?: string;
         snapshot?: string;
@@ -126,6 +134,14 @@ export function recordedGaps(name: string): RecordedGap[] {
 export function parseRecord(
   parsed: {
     expect?: {
+      seeds?: ReadonlyArray<{
+        gaps?: ReadonlyArray<{
+          kind?: string | undefined;
+          snapshot?: string | undefined;
+          site?: { file?: string | undefined } | undefined;
+          reasonCode?: string | undefined;
+        }>;
+      }>;
       repoWideGaps?: ReadonlyArray<{
         kind?: string | undefined;
         snapshot?: string | undefined;
@@ -145,7 +161,18 @@ export function parseRecord(
         `assert that the fixture produces no gaps.`,
     );
   }
-  return parseRecordedGaps(parsed.expect.repoWideGaps, name);
+  // **Both** scopes. Reading only `repoWideGaps` is how three fixtures came to record a
+  // seed-level gap that nothing compared: JSON shaped exactly like an expectation,
+  // asserting nothing, and passing because passing was the only signal anyone looked at.
+  // An absent `gaps` on a seed is fine — most records have no seed-level gaps to state —
+  // but a present one is now read.
+  const seedGaps = (parsed.expect.seeds ?? []).flatMap(
+    (seed) => seed.gaps ?? [],
+  );
+  return [
+    ...parseRecordedGaps(seedGaps, name),
+    ...parseRecordedGaps(parsed.expect.repoWideGaps, name),
+  ];
 }
 
 /**

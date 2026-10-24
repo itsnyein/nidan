@@ -116,3 +116,6 @@ can be tightened deliberately.
 | [`usage-value-position`](usage-value-position/README.md)                           | A mixin call in `extends` and a tagged template are `invoke`     |
 | [`usage-commonjs-require`](usage-commonjs-require/README.md)                       | The three supported `require` spellings reach one seed           |
 | [`usage-commonjs-exports`](usage-commonjs-exports/README.md)                       | CommonJS export spellings are module patterns, not usages        |
+| [`gap-interface-dispatch`](gap-interface-dispatch/README.md)                       | Implementing an interface member emits the dispatch gap          |
+| [`gap-override-dispatch`](gap-override-dispatch/README.md)                         | Overriding a base method emits the dispatch gap                  |
+| [`gap-untyped-member-call`](gap-untyped-member-call/README.md)                     | A member call on an `any` receiver emits a gap, not a usage      |

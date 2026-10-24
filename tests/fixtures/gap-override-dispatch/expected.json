@@ -1,0 +1,31 @@
+{
+  "description": "A seed method overriding a base-class method emits an interface-or-override-dispatch gap, and a call through the base type resolves ambiguous.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/base.ts :: LoudReporter :: method :: render",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "invoke",
+            "resolution": { "status": "ambiguous" },
+            "from": "src/use.ts :: :: function :: show",
+            "site": { "file": "src/use.ts", "line": 4 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": [
+          {
+            "kind": "interface-or-override-dispatch",
+            "snapshot": "head",
+            "site": { "file": "src/base.ts", "line": 8 },
+            "relatedSeed": "src/base.ts :: LoudReporter :: method :: render",
+            "reasonCode": "overrides-base-method"
+          }
+        ]
+      }
+    ],
+    "repoWideGaps": []
+  }
+}
