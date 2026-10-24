@@ -51,6 +51,8 @@ client[send]("payload"); // type-checks, and resolves to Client.send
 
 TypeScript resolves that call and will reject it if `send` is not a member. nidan still does not report it. Usage discovery is driven by the compiler's reference search, which returns literal keys written in place and does not return keys reached through a constant — so no reference arrives to be classified. **The limitation is in nidan's discovery, not in the type system**, and saying otherwise would misdescribe what the compiler knows.
 
+**A literal in parentheses is also not discovered.** `client[("send")]()` resolves exactly as `client["send"]()` does and type-checks identically, but the compiler's reference search returns nothing for it, so the call reaches nidan as no reference at all. Parenthesising a key therefore hides a usage that the same key would have revealed written plainly — surprising, and worth knowing if a report looks emptier than expected.
+
 Both cases produce **no usage and no gap**: there is no reference to report, rather than one that could not be resolved. They sit with runtime reflection in the [coverage statement](#coverage-statement) — dynamic dependencies nidan does not claim to detect.
 
 The practical consequence is the same either way: if a changed method is only ever reached through a key nidan does not follow, the report shows it with no usages. Treat a dispatch table — keyed by variable or by constant — as outside what the report covers.
