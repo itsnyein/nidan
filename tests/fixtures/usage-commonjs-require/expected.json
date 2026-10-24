@@ -1,0 +1,29 @@
+{
+  "description": "The three supported require spellings: a namespace require, a destructured require filtered as an import, and a bare require that imports nothing.",
+  "expect": {
+    "run": { "status": "ok", "analysisMode": "tsconfig", "reasons": [] },
+    "seeds": [
+      {
+        "key": "src/greet.js :: :: function :: greet",
+        "change": "modified",
+        "usages": [
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/use.js :: :: function :: viaNamespace",
+            "site": { "file": "src/use.js", "line": 5 }
+          },
+          {
+            "relation": "invoke",
+            "resolution": { "status": "exact" },
+            "from": "src/use.js :: :: function :: viaDestructured",
+            "site": { "file": "src/use.js", "line": 9 }
+          }
+        ],
+        "valueReferences": [],
+        "gaps": []
+      }
+    ],
+    "repoWideGaps": []
+  }
+}

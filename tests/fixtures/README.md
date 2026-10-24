@@ -114,3 +114,5 @@ can be tightened deliberately.
 | [`usage-constructor-implicit`](usage-constructor-implicit/README.md)               | A subclass with no constructor still constructs its base         |
 | [`usage-member-calls`](usage-member-calls/README.md)                               | Instance, static, and `["literal"]` calls all report `invoke`    |
 | [`usage-value-position`](usage-value-position/README.md)                           | A mixin call in `extends` and a tagged template are `invoke`     |
+| [`usage-commonjs-require`](usage-commonjs-require/README.md)                       | The three supported `require` spellings reach one seed           |
+| [`usage-commonjs-exports`](usage-commonjs-exports/README.md)                       | CommonJS export spellings are module patterns, not usages        |

@@ -141,6 +141,68 @@ function actualUsages(result: ReferenceResult): string[] {
     .sort();
 }
 
+/**
+ * Fixtures whose record states behaviour that is **not implemented yet**.
+ *
+ * Each entry is asserted to fail below, not skipped. These also opt out of the
+ * unexplained-occurrence sweep, which is unusual and deliberate: CommonJS discovery does
+ * not exist, so the differential check correctly reports its call sites as unexplained.
+ * That is the no-silent-miss guarantee working, not a defect — but it means the sweep
+ * cannot hold these fixtures until the feature lands, so the pending entry asserts the
+ * unexplained set **exactly** instead. A fixture that starts explaining more, or less,
+ * fails here.
+ */
+const PENDING_FIXTURES = new Map<
+  string,
+  { usages: string[]; unexplained: string[] }
+>([
+  [
+    "usage-commonjs-require",
+    {
+      usages: [],
+      unexplained: ["src/use.js:2", "src/use.js:5", "src/use.js:9"],
+    },
+  ],
+  [
+    "usage-commonjs-exports",
+    {
+      usages: [
+        "src/lib.js :: :: function :: alpha | value-reference | src/lib.js :: module | src/lib.js:13 | exact",
+        "src/lib.js :: :: function :: bravo | value-reference | src/lib.js :: module | src/lib.js:14 | exact",
+      ],
+      unexplained: [
+        "src/lib.js:13",
+        "src/lib.js:14",
+        "src/use.js:4",
+        "src/use.js:4",
+      ],
+    },
+  ],
+]);
+
+describe("fixtures whose behaviour is not implemented yet", () => {
+  it.each([...PENDING_FIXTURES])(
+    "%s still reports what it reports today",
+    async (name, expected) => {
+      const outcome = await analyze(join("tests", "fixtures", name));
+
+      // Stated exactly, so the entry cannot survive its own fix.
+      expect(actualUsages(outcome.result)).toEqual(expected.usages);
+      expect(
+        unexplainedOf(outcome.occurrences)
+          .map(
+            (occurrence) => `${occurrence.filePath}:${String(occurrence.line)}`,
+          )
+          .sort(),
+      ).toEqual([...expected.unexplained].sort());
+      // The record is not empty, so this is pending work rather than a fixture that
+      // expects nothing.
+      expect(expectedUsages(name)?.length ?? 0).toBeGreaterThan(0);
+    },
+    TIMEOUT_MS,
+  );
+});
+
 describe("usages against the frozen fixtures", () => {
   // **Every** fixture, not only the ones whose records declare a usage. Keying on record
   // content is the defect this repository has already paid for twice: a fixture that
@@ -148,7 +210,9 @@ describe("usages against the frozen fixtures", () => {
   // "has at least one usage" removed exactly those from the check. A record that empties
   // itself would also have deleted its own assertion.
   const names = allFixtures();
-  const declaring = names.filter((name) => expectedUsages(name) !== undefined);
+  const declaring = names
+    .filter((name) => expectedUsages(name) !== undefined)
+    .filter((name) => !PENDING_FIXTURES.has(name));
 
   it("includes the fixtures that freeze an empty usage list", () => {
     // The property the enumeration exists for, asserted rather than assumed. A fixture
@@ -176,7 +240,7 @@ describe("usages against the frozen fixtures", () => {
     TIMEOUT_MS,
   );
 
-  it.each(names)(
+  it.each(names.filter((name) => !PENDING_FIXTURES.has(name)))(
     "%s leaves no occurrence of a seed name unexplained",
     async (name) => {
       const outcome = await analyze(join("tests", "fixtures", name));
